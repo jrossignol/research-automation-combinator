@@ -1,0 +1,24 @@
+GUI ELEMENTS
+*** Inputs
+* Set current tech
+* Add to front of queue
+* Add to back of queue
+
+*** I/O
+* Get tech prerequisites
+* Get tech successors
+* Get tech recipes
+* Get tech items
+
+*** Output
+* Get current tech
+   * Get current tech %
+   * Get current tech x / y
+   * Get science packs required
+* Get all researched tech
+* Get all available tech
+* Get all unresearched tech
+
+*** Performance
+* Enable/Disable
+* Update rate limit
