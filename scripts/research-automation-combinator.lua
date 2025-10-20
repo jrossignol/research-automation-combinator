@@ -822,9 +822,52 @@ function ResearchAutomationCombinator:remove_output(name, cb)
   end
 end
 
+--- Removes all research status outputs from the combinator and updates indexes accordingly.
+--- @param cb LuaDeciderCombinatorControlBehavior? The control behavior of the combinator.
+function ResearchAutomationCombinator:remove_research_status_outputs(cb)
+  -- If there are no research status outputs, nothing to do
+  if not self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_STATUS_START] then return end
+
+  --- Get control behavior if not provided
+  --- @type LuaDeciderCombinatorControlBehavior
+  cb = cb or self.entity.get_control_behavior()
+
+  -- Calculate how many outputs we're removing
+  local start = self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_STATUS_START]
+  local end_idx = self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_STATUS_END]
+  local count = end_idx - start + 1
+
+  -- Remove the outputs in reverse order
+  for i = end_idx, start, -1 do
+    cb.remove_output(i)
+  end
+
+  -- Update all indexes that were after the removed section
+  for _, i in pairs(OUTPUT_SIGNAL_INDEX) do
+    if self.indexes[i] then
+      if self.indexes[i] >= start and self.indexes[i] <= end_idx then
+        -- This index was in the removed range
+        if i ~= OUTPUT_SIGNAL_INDEX.RESEARCH_STATUS_START then
+          self.indexes[i] = nil
+        end
+      elseif self.indexes[i] > end_idx then
+        -- This index was after the removed range, decrease by the number of items removed
+        self.indexes[i] = self.indexes[i] - count
+      end
+    end
+  end
+
+  -- Clear the research status range
+  self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_STATUS_START] = nil
+  self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_STATUS_END] = nil
+end
+
 --- Handler for any change to research (finishing, cancelling, reversing).
 --- @param event? EventData.on_research_finished|EventData.on_research_reversed|EventData.on_research_cancelled
 function ResearchAutomationCombinator:on_research_change(event)
+  -- Remove existing research status outputs
+  self:remove_research_status_outputs(cb)
+
   if self.output_research_by_status ~= OUTPUT_RESEARCH_BY_STATUS.NONE then
     -- Make a list of all the tech that we need to output
     local techs = {}
@@ -836,7 +879,7 @@ function ResearchAutomationCombinator:on_research_change(event)
       elseif (self.output_research_by_status == OUTPUT_RESEARCH_BY_STATUS.AVAILABLE and not tech.researched) then
         local available = true
         for _, ptech in pairs(tech.prerequisites or {}) do
-          if not game.forces.player.technologies[ptech].researched then
+          if not ptech.researched then
             available = false
             break
           end
@@ -849,7 +892,32 @@ function ResearchAutomationCombinator:on_research_change(event)
     end
 
     -- Output the techs to the combinator
-    
+    --- @type LuaDeciderCombinatorControlBehavior
+    local cb = self.entity.get_control_behavior()
+
+    -- Add new research status outputs
+    if #techs > 0 then
+      local start_idx = self.indexes[OUTPUT_SIGNAL_INDEX.NEXT_FREE] or 1
+      self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_STATUS_START] = start_idx
+      local i = start_idx
+
+      for _, tech in ipairs(techs) do
+        local output = {
+          signal = {
+            type = "virtual",
+            name = "rac-technology-" .. tech.name,
+            quality = "normal",
+          },
+          constant = 1,
+          copy_count_from_input = false,
+        }
+        cb.add_output(output, i)
+        i = i + 1
+      end
+
+      self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_STATUS_END] = start_idx + #techs - 1
+      self.indexes[OUTPUT_SIGNAL_INDEX.NEXT_FREE] = self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_STATUS_END] + 1
+    end
   end
 end
 
