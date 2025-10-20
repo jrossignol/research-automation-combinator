@@ -412,8 +412,15 @@ function ResearchAutomationCombinator:update_combinator()
     constant = output_mask,
   })
 
-  -- Clear states
+  -- Clear states and remove progress signals if features are disabled
   self.cached_research_info = {}
+  if not self.output_research_progress_percent then
+    self:remove_output(OUTPUT_SIGNAL_INDEX.RESEARCH_PERCENT)
+  end
+  if not self.output_research_progress_value then
+    self:remove_output(OUTPUT_SIGNAL_INDEX.RESEARCH_VALUE)
+    self:remove_output(OUTPUT_SIGNAL_INDEX.RESEARCH_TOTAL)
+  end
 
   -- Also call any handlers that need to be called when the combinator is updated
   self:on_research_change(nil)
@@ -756,7 +763,7 @@ function ResearchAutomationCombinator:on_tick()
     end
 
     --- Remove anything that is left over for this signal type
-    while (i <= #cb.parameters.outputs and cb.parameters.outputs[i].signal.type == signal_type) do
+    while (i <= #cb.parameters.outputs and cb.parameters.outputs[i].signal and cb.parameters.outputs[i].signal.type == signal_type) do
       cb.remove_output(i)
     end
   end
