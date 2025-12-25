@@ -550,7 +550,7 @@ function ResearchAutomationCombinator:on_tick()
         -- Calculate current value
         local value = nil
         if (i == OUTPUT_SIGNAL_INDEX.RESEARCH_PERCENT) then
-          value = math.floor(100 * progress + 0.5)
+          value = math.floor(100 * progress)
         elseif game.tick % 60 == 0 or self.cached_research_info[i] == nil then
           -- Calculate research from formula
           local formula = tech.research_unit_count_formula

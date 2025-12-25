@@ -19,68 +19,6 @@ function on_tick()
   for _, rac in pairs(storage.research_combinators or {}) do
     if rac.entity and rac.entity.valid then
       rac:on_tick()
-    -- TODO: Remove old code
-    elseif 1 == 0 then
-      -- Get the combinator details
-      --- @type LuaDeciderCombinatorControlBehavior
-      local cb = rac.entity.get_control_behavior()
-
-      -- Output signals
-      local outputs = {}
-
-      -- Tech Prerequisites
-      for _, connection_id in pairs { defines.wire_connector_id.combinator_input_red, defines.wire_connector_id.combinator_input_green } do
-        ---@type Signal[]
-        local input_signals = rac.entity.get_signals(defines.wire_connector_id.combinator_input_red, defines.wire_connector_id.combinator_input_green)
-        for _, signal in pairs(input_signals or {}) do
-          if signal.count > 0 and signal.signal.type == "virtual" and string.sub(signal.signal.name, 1, 4) == "rac-" then
-            -- Remove "rac-technology-" to get the tech name
-            local tech_name = string.sub(signal.signal.name, 16, -1)
-            local tech = game.forces.player.technologies[tech_name]
-            local quality = signal.signal.quality or "normal"
-
-            for ptech_name, ptech in pairs(tech.prerequisites or {}) do
-              outputs[ptech_name] = outputs[ptech_name] or {}
-              outputs[ptech_name][quality] = (outputs[ptech_name][quality] or 0) + signal.count
-            end
-          end
-        end
-      end
-
-      -- Current tech
-      local tech = game.forces.player.current_research
-      if tech then
-        local quality = "normal"
-
-        outputs[tech.name] = outputs[tech.name] or {}
-        outputs[tech.name][quality] = (outputs[tech.name][quality] or 0) + 1
-      end
-
-      local i = 1
-      for name, qarr in pairs(outputs) do
-        for quality, count in pairs(qarr) do
-          local output = {
-            signal = {
-              type = "virtual",
-              name = "rac-technology-" .. name,
-              quality = quality,
-            },
-            constant = count,
-            copy_count_from_input = false,
-          }
-          if (cb.get_output(i)) then
-            cb.set_output(i, output)
-          else
-            cb.add_output(output)
-          end
-
-          i = i + 1
-        end
-      end
-
-      while cb.get_output(i) do
-        cb.remove_output(i)
-      end
     end
   end
 end

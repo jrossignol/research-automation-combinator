@@ -1,24 +1,51 @@
-GUI ELEMENTS
-*** Inputs
-* Set current tech
-* Add to front of queue
-* Add to back of queue
+RELEASE PREPARATION
+*** Mod metadata
+* [TODO] Update info.json description (currently "Test description")
+* [TODO] Write mod description for Mod Portal
+* [TODO] Create proper README.md with usage guide
+* [TODO] Add changelog for v0.0.1
 
-*** I/O
-* Get tech prerequisites
-* Get tech successors
-* Get tech recipes
-* Get tech items
+*** Localization
+* [TODO] Complete entity description in locale/en/rac.cfg (currently "TODO: RAC description")
+* [TODO] Add descriptions for all GUI modes and operations
 
-*** Output
-* Get current tech
-   * Get current tech %
-   * Get current tech x / y
-   * Get science packs required
-* Get all researched tech
-* Get all available tech
-* Get all unresearched tech
+*** Graphics & Assets
+* [TODO] Create custom combinator sprite sheet with cyan tint (currently tinted at runtime only)
+* [TODO] Create custom item icon specifically for the Research Automation Combinator
+* [TODO] Create window preview image for when combinator is placed in world
+* [TODO] Create mod portal thumbnail/preview image
 
-*** Performance
-* Enable/Disable
-* Update rate limit
+CODE QUALITY & CLEANUP
+* [TODO] Implement proper handling for tech levels > 9 (signal.lua line 50-51)
+* [TODO] Test without quality system integration (research-automation-combinator.lua line 80)
+
+GUI ELEMENTS (IMPLEMENTED)
+✓ Inputs
+  ✓ Set current tech
+  ✓ Add to front of queue
+  ✓ Add to back of queue
+
+✓ I/O Operations
+  ✓ Get tech prerequisites
+  ✓ Get tech successors
+  ✓ Get tech recipes
+  ✓ Get tech items
+
+✓ Output
+  ✓ Get current tech
+    ✓ Get current tech %
+    ✓ Get current tech x / y
+    ✓ Get science packs required
+  ✓ Get all researched tech
+  ✓ Get all available tech
+  ✓ Get all unresearched tech
+
+✓ Performance Controls
+  ✓ Enable/Disable
+  ✓ Update rate limit
+
+EDGE CASES & ENHANCEMENTS
+* [TODO] Handle technology levels beyond 9 with better signal representation
+* [TODO] Verify Factorio 2.0 compatibility with quality system
+* [TODO] Test with space-age content (mod has optional dependency)
+* [TODO] Verify picker-dollies compatibility implementation
