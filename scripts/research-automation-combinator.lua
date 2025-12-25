@@ -902,17 +902,21 @@ function ResearchAutomationCombinator:on_research_change(event)
       local i = start_idx
 
       for _, tech in ipairs(techs) do
-        local output = {
-          signal = {
-            type = "virtual",
-            name = "rac-technology-" .. tech.name,
-            quality = "normal",
-          },
-          constant = 1,
-          copy_count_from_input = false,
-        }
-        cb.add_output(output, i)
-        i = i + 1
+        -- Check if the virtual signal exists (it may not if a mod was removed)
+        local signal_name = "rac-technology-" .. tech.name
+        if prototypes.virtual_signal[signal_name] then
+          local output = {
+            signal = {
+              type = "virtual",
+              name = signal_name,
+              quality = "normal",
+            },
+            constant = 1,
+            copy_count_from_input = false,
+          }
+          cb.add_output(output, i)
+          i = i + 1
+        end
       end
 
       self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_STATUS_END] = start_idx + #techs - 1
@@ -940,22 +944,28 @@ function ResearchAutomationCombinator:on_research_queue_change(event)
         return
       end
 
-      local output = {
-        signal = {
-          type = "virtual",
-          name = signal_name,
-          quality = "normal",
-        },
-        constant = 1,
-        copy_count_from_input = false,
-      }
+      -- Check if the virtual signal exists (it may not if a mod was removed)
+      if prototypes.virtual_signal[signal_name] then
+        local output = {
+          signal = {
+            type = "virtual",
+            name = signal_name,
+            quality = "normal",
+          },
+          constant = 1,
+          copy_count_from_input = false,
+        }
 
-      -- Update the existing output
-      if current_output then
-        cb.set_output(current_index, output)
-      -- Add a new output
+        -- Update the existing output
+        if current_output then
+          cb.set_output(current_index, output)
+        -- Add a new output
+        else
+          self:add_output(OUTPUT_SIGNAL_INDEX.RESEARCH_CURRENT, output, cb)
+        end
       else
-        self:add_output(OUTPUT_SIGNAL_INDEX.RESEARCH_CURRENT, output, cb)
+        -- Signal doesn't exist, clear the output if it was set
+        clear_research = true
       end
     -- No current research, so remove the output if it exists
     else

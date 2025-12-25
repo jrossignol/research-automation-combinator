@@ -1,1 +1,3 @@
-require ("prototypes.signal")
+local signal = require("prototypes.signal")
+
+signal.create_initial_signals()

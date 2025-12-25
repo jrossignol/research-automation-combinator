@@ -1,3 +1,6 @@
+-- Exported module for signal creation
+local signal_module = {}
+
 -- Helper function to generate an icon for a digit
 local function signal_digit_icon(digit)
   return {
@@ -55,7 +58,6 @@ local function signal_icons(tech, tech_basename, level)
   return icons
 end
 
-
 -- Helper function for creating a subgroup
 local function subgroup(name)
   data:extend({
@@ -96,7 +98,6 @@ end
 local tech_tiers = {}
 local function tech_tier(tech)
   -- Check cache first
-  log("determine tech tier of " .. tech.name)
   if not tech_tiers[tech.name] then
     -- Determine the highest tier science pack required
     local sci_tier = 0
@@ -136,53 +137,47 @@ local function tech_tier(tech)
   return tech_tiers[tech.name]
 end
 
+-- Helper function to create a signal for a technology
+local function create_tech_signal(tech)
+  local signal = {
+    type = "virtual-signal",
+    name = "rac-technology-" .. tech.name,
+    icons = signal_icons(tech),
+    techID = tech.name
+  }
 
--- Create a signal for each technology
-local tech_signals = {}
-for name, tech in pairs(data.raw.technology) do
-  if not tech.hidden then
-    local signal = {
-      type = "virtual-signal",
-      name = "rac-technology-" .. tech.name,
-      icons = signal_icons(tech),
-      techID = tech.name
-    }
-
-    -- Need to remove the numbers from localised names.  While we're doing
-    -- that, use different strings to build the names of infinite and non-infinite
-    -- repeating techs.
-    local tech_basename, tech_level = string.match(tech.name, "(%g+)-(%d+)")
-    if not tech_basename then
-      -- Reference localised names of technology for the signal names
-      signal.localised_name = { "technology-name." .. tech.name }
-      signal.localised_description = { "technology-description." .. tech.name }
-
-      -- Set icons
-      signal.icons = signal_icons(tech)
-    else
-      -- Use the form "<tech> <number>" or "<tech> <number>+" depending on whether
-      -- the tech is infinite or just numbered.
-      local tech_str = "rac-numbered-tech"
-      if tech.max_level == "infinite" then
-        tech_str = "rac-infinite-tech"
-      end
-
-      -- Need to reference the correctly localised string (without the extra digit)
-      signal.localised_name = { tech_str, { "technology-name." .. tech_basename }, tech_level }
-      signal.localised_description = { "technology-description." .. tech_basename }
-
-      -- Set icons with level
-      signal.icons = signal_icons(tech, tech_basename, tech_level)
+  -- Need to remove the numbers from localised names.  While we're doing
+  -- that, use different strings to build the names of infinite and non-infinite
+  -- repeating techs.
+  local tech_basename, tech_level = string.match(tech.name, "(%g+)-(%d+)")
+  if not tech_basename then
+    -- Reference localised names of technology for the signal names
+    signal.localised_name = { "technology-name." .. tech.name }
+    signal.localised_description = { "technology-description." .. tech.name }
+    signal.icons = signal_icons(tech)
+  else
+    -- Use the form "<tech> <number>" or "<tech> <number>+" depending on whether
+    -- the tech is infinite or just numbered.
+    local tech_str = "rac-numbered-tech"
+    if tech.max_level == "infinite" then
+      tech_str = "rac-infinite-tech"
     end
 
-    -- Determine the tier of this tech
-    local sci_tier = tech_tier(tech)
+    -- Need to reference the correctly localised string (without the extra digit)
+    signal.localised_name = { tech_str, { "technology-name." .. tech_basename }, tech_level }
+    signal.localised_description = { "technology-description." .. tech_basename }
+    signal.icons = signal_icons(tech, tech_basename, tech_level)
+  end
 
-    -- Check if this tech is one that unlocks a science pack, and instead move
-    -- the tech to that subgroup for the science pack
-    for i, mod in ipairs(tech.effects or {}) do
-      if mod.type == "unlock-recipe" then
-        local recipe = data.raw.recipe[mod.recipe]
+  -- Determine the tier of this tech
+  local sci_tier = tech_tier(tech)
+
+  -- Check if this tech is one that unlocks a science pack, and instead move
+  -- the tech to that subgroup for the science pack
+  for i, mod in ipairs(tech.effects or {}) do
+    if mod.type == "unlock-recipe" then
+      local recipe = data.raw.recipe[mod.recipe]
+      if recipe then
         for j, prod in ipairs(recipe.results) do
           if prod.type == "item" and sci_tiers[prod.name] then
             sci_tier = sci_tiers[prod.name]
@@ -191,30 +186,106 @@ for name, tech in pairs(data.raw.technology) do
         end
       end
     end
+  end
 
-    -- If no order determined yet, use science packs, then name to determine ordering
-    if not signal.order then
-      -- Trigger techs first
-      if not tech.unit then
-        signal.order = "b"
-      else
-        local pack_str = ""
-        for i, ri in ipairs(tech.unit and tech.unit.ingredients or {}) do
-          pack_str = pack_str .. "-" .. string.format("%02d", sci_tiers[ri[1]])
-        end
-        signal.order = "c" .. pack_str
+  -- If no order determined yet, use science packs, then name to determine ordering
+  if not signal.order then
+    -- Trigger techs first
+    if not tech.unit then
+      signal.order = "b"
+    else
+      local pack_str = ""
+      for i, ri in ipairs(tech.unit and tech.unit.ingredients or {}) do
+        pack_str = pack_str .. "-" .. string.format("%02d", sci_tiers[ri[1]] or 0)
       end
-
-      -- Add the name for final ordering
-      signal.order = signal.order .. "-" .. tech.name
+      signal.order = "c" .. pack_str
     end
 
-    -- Tier determines the subgroup
-    signal.subgroup = string.format("rac-technology-%03d", sci_tier)
+    -- Add the name for final ordering
+    signal.order = signal.order .. "-" .. tech.name
+  end
 
-    -- Add to our signal list
-    tech_signals[#tech_signals+1] = signal
+  -- Tier determines the subgroup
+  signal.subgroup = string.format("rac-technology-%03d", sci_tier)
+
+  return signal
+end
+
+-- Create signals for all technologies (called during data-updates)
+function signal_module.create_initial_signals()
+  local tech_signals = {}
+  local signal_debug_info = {created = {}, skipped = {}}
+
+  for name, tech in pairs(data.raw.technology) do
+    if not tech.hidden then
+      local signal = create_tech_signal(tech)
+      table.insert(tech_signals, signal)
+      signal_debug_info.created[signal.name] = tech.name
+    else
+      signal_debug_info.skipped["rac-technology-" .. name] = "tech is hidden"
+    end
+  end
+
+  if #tech_signals > 0 then
+    log("[RAC] Signal creation summary: Created " .. #tech_signals .. " virtual signals for technologies")
+  end
+
+  data:extend(tech_signals)
+end
+
+-- Create signals for any missing technologies (called during data-final-fixes)
+function signal_module.create_missing_signals()
+  local missing_signals = {}
+  local signal_count = 0
+
+  for tech_name, tech in pairs(data.raw.technology) do
+    if not tech.hidden then
+      local signal_name = "rac-technology-" .. tech_name
+
+      -- Check if signal already exists
+      if not data.raw["virtual-signal"][signal_name] then
+        signal_count = signal_count + 1
+        local signal = create_tech_signal(tech)
+        table.insert(missing_signals, signal)
+      end
+    end
+  end
+
+  if signal_count > 0 then
+    log("[RAC] data-final-fixes: Found and creating " .. signal_count .. " missing virtual signals")
+    data:extend(missing_signals)
+  else
+    log("[RAC] data-final-fixes: All expected signals already exist, no fixes needed")
   end
 end
 
-data:extend(tech_signals)
+-- Remove signals for any technologies that no longer exist (called during data-final-fixes)
+function signal_module.remove_extra_signals()
+  local signals_to_remove = {}
+  local signal_count = 0
+
+  for signal_name, signal in pairs(data.raw["virtual-signal"]) do
+    -- Check if this is a RAC technology signal
+    if string.sub(signal_name, 1, 16) == "rac-technology-" then
+      -- Extract the technology name
+      local tech_name = string.sub(signal_name, 17)
+
+      -- Check if the corresponding technology exists
+      if not data.raw.technology[tech_name] then
+        signal_count = signal_count + 1
+        table.insert(signals_to_remove, signal_name)
+      end
+    end
+  end
+
+  if signal_count > 0 then
+    log("[RAC] data-final-fixes: Found and removing " .. signal_count .. " orphaned virtual signals")
+    for _, signal_name in ipairs(signals_to_remove) do
+      data.raw["virtual-signal"][signal_name] = nil
+    end
+  else
+    log("[RAC] data-final-fixes: No orphaned signals to remove")
+  end
+end
+
+return signal_module
