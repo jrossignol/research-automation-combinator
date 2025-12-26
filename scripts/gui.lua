@@ -167,6 +167,7 @@ function create_gui(player, entity)
     type="radiobutton",
     name="queue_tech_replace",
     caption={"rac-queue-tech-replace"},
+    tooltip = {"rac-queue-tech-replace-description"},
     state=false,
     tags={rac=true, radiobutton_group="queue_tech"},
   }
@@ -174,6 +175,7 @@ function create_gui(player, entity)
     type="radiobutton",
     name="queue_tech_front",
     caption={"rac-queue-tech-front"},
+    tooltip = {"rac-queue-tech-front-description"},
     state=false,
     tags={rac=true, radiobutton_group="queue_tech"},
   }
@@ -181,6 +183,7 @@ function create_gui(player, entity)
     type="radiobutton",
     name="queue_tech_back",
     caption={"rac-queue-tech-back"},
+    tooltip = {"rac-queue-tech-back-description"},
     state=false,
     tags={rac=true, radiobutton_group="queue_tech"},
   }
@@ -223,6 +226,15 @@ function create_gui(player, entity)
     style="checkbox",
     caption={"rac-research-get-items"},
     tooltip = {"rac-research-get-items-description"},
+    tags = { rac=true },
+    state = false,
+  }
+  f.add{
+    type="checkbox",
+    name="research_get_science_packs",
+    style="checkbox",
+    caption={"rac-research-get-science-packs"},
+    tooltip = {"rac-research-get-science-packs-description"},
     tags = { rac=true },
     state = false,
   }
@@ -283,6 +295,7 @@ function create_gui(player, entity)
     type="label",
     name="signal_percent_label",
     caption={"rac-research-current-percent-label"},
+    tooltip = {"rac-research-current-percent-label-description"},
   }
   hh.add{
     type="empty-widget",
@@ -316,16 +329,17 @@ function create_gui(player, entity)
   }
   hh.add{
     type="label",
-    name="signal_value_label",
-    caption={"rac-research-current-value-label"},
-  }
+    name="signal_current_label",
+    caption={"rac-research-current-current-label"},
+    tooltip = {"rac-research-current-current-label-description"},
+}
   hh.add{
     type="empty-widget",
     style="rac_horizontal_pusher",
   }
   hh.add{
     type="choose-elem-button",
-    name="signal_value",
+    name="signal_current",
     style="slot_button_in_shallow_frame",
     elem_type = "signal",
     tags = { rac=true },
@@ -333,6 +347,29 @@ function create_gui(player, entity)
   hh = f.add{
     type="flow",
     name="h3",
+    direction="horizontal",
+    style="player_input_horizontal_flow",
+  }
+  hh.add{
+    type="label",
+    name="signal_remaining_label",
+    caption={"rac-research-current-remaining-label"},
+    tooltip = {"rac-research-current-remaining-label-description"},
+}
+  hh.add{
+    type="empty-widget",
+    style="rac_horizontal_pusher",
+  }
+  hh.add{
+    type="choose-elem-button",
+    name="signal_remaining",
+    style="slot_button_in_shallow_frame",
+    elem_type = "signal",
+    tags = { rac=true },
+  }
+  hh = f.add{
+    type="flow",
+    name="h4",
     direction="horizontal",
     style="player_input_horizontal_flow",
   }
@@ -370,6 +407,7 @@ function create_gui(player, entity)
     type="radiobutton",
     name="research_status_researched",
     caption={"rac-research-status-researched"},
+    tooltip = {"rac-research-status-researched-description"},
     state=false,
     tags={rac=true, radiobutton_group="research_status"},
   }
@@ -377,6 +415,7 @@ function create_gui(player, entity)
     type="radiobutton",
     name="research_status_available",
     caption={"rac-research-status-available"},
+    tooltip = {"rac-research-status-available-description"},
     state=false,
     tags={rac=true, radiobutton_group="research_status"},
   }
@@ -384,6 +423,7 @@ function create_gui(player, entity)
     type="radiobutton",
     name="research_status_unresearched",
     caption={"rac-research-status-unresearched"},
+    tooltip = {"rac-research-status-unresearched-description"},
     state=false,
     tags={rac=true, radiobutton_group="research_status"},
   }
@@ -424,6 +464,7 @@ function update_object_from_gui()
   rac.get_research_successors = input.research_get_successors.state
   rac.get_research_recipes = input.research_get_recipes.state
   rac.get_research_items = input.research_get_items.state
+  rac.get_research_science_packs = input.research_get_science_packs.state
 
   -- Convert output side values to class values
   local output = storage.gui.content.h.research_output_mode.f
@@ -431,8 +472,9 @@ function update_object_from_gui()
   rac.output_research_progress_percent = output.research_current_percent.state
   rac.output_research_progress_percent_signal = output.h.signal_percent.elem_value
   rac.output_research_progress_value = output.research_current_value.state
-  rac.output_research_progress_value_vsignal = output.h2.signal_value.elem_value
-  rac.output_research_progress_value_tsignal = output.h3.signal_total.elem_value
+  rac.output_research_progress_value_csignal = output.h2.signal_current.elem_value
+  rac.output_research_progress_value_rsignal = output.h3.signal_remaining.elem_value
+  rac.output_research_progress_value_tsignal = output.h4.signal_total.elem_value
   rac.output_research_by_status = ((not output.research_status_check.state) and OUTPUT_RESEARCH_BY_STATUS.NONE) or
     (output.research_status_researched.state and OUTPUT_RESEARCH_BY_STATUS.RESEARCHED) or
     (output.research_status_available.state and OUTPUT_RESEARCH_BY_STATUS.AVAILABLE) or
@@ -485,22 +527,26 @@ function update_gui_from_object()
   storage.gui.content.h.research_input_mode.f.research_get_successors.state = rac.get_research_successors
   storage.gui.content.h.research_input_mode.f.research_get_recipes.state = rac.get_research_recipes
   storage.gui.content.h.research_input_mode.f.research_get_items.state = rac.get_research_items
+  storage.gui.content.h.research_input_mode.f.research_get_science_packs.state = rac.get_research_science_packs
 
   -- Set output states
   storage.gui.content.h.research_output_mode.f.h.signal_percent_label.enabled = rac.output_research_progress_percent
   storage.gui.content.h.research_output_mode.f.h.signal_percent.enabled = rac.output_research_progress_percent
-  storage.gui.content.h.research_output_mode.f.h2.signal_value_label.enabled = rac.output_research_progress_value
-  storage.gui.content.h.research_output_mode.f.h2.signal_value.enabled = rac.output_research_progress_value
-  storage.gui.content.h.research_output_mode.f.h3.signal_total_label.enabled = rac.output_research_progress_value
-  storage.gui.content.h.research_output_mode.f.h3.signal_total.enabled = rac.output_research_progress_value
+  storage.gui.content.h.research_output_mode.f.h2.signal_current_label.enabled = rac.output_research_progress_value
+  storage.gui.content.h.research_output_mode.f.h2.signal_current.enabled = rac.output_research_progress_value
+  storage.gui.content.h.research_output_mode.f.h3.signal_remaining_label.enabled = rac.output_research_progress_value
+  storage.gui.content.h.research_output_mode.f.h3.signal_remaining.enabled = rac.output_research_progress_value
+  storage.gui.content.h.research_output_mode.f.h4.signal_total_label.enabled = rac.output_research_progress_value
+  storage.gui.content.h.research_output_mode.f.h4.signal_total.enabled = rac.output_research_progress_value
 
   -- Outputs
   storage.gui.content.h.research_output_mode.f.research_current_check.state = rac.output_current_research
   storage.gui.content.h.research_output_mode.f.research_current_percent.state = rac.output_research_progress_percent
   storage.gui.content.h.research_output_mode.f.h.signal_percent.elem_value = rac.output_research_progress_percent_signal
   storage.gui.content.h.research_output_mode.f.research_current_value.state = rac.output_research_progress_value
-  storage.gui.content.h.research_output_mode.f.h2.signal_value.elem_value = rac.output_research_progress_value_vsignal
-  storage.gui.content.h.research_output_mode.f.h3.signal_total.elem_value = rac.output_research_progress_value_tsignal
+  storage.gui.content.h.research_output_mode.f.h2.signal_current.elem_value = rac.output_research_progress_value_csignal
+  storage.gui.content.h.research_output_mode.f.h3.signal_remaining.elem_value = rac.output_research_progress_value_rsignal
+  storage.gui.content.h.research_output_mode.f.h4.signal_total.elem_value = rac.output_research_progress_value_tsignal
 
   -- Research status states
   local research_by_status = rac.output_research_by_status ~= OUTPUT_RESEARCH_BY_STATUS.NONE

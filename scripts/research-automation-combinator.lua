@@ -42,11 +42,12 @@ OUTPUT_RESEARCH_BY_STATUS = {
 local OUTPUT_SIGNAL_INDEX = {
   RESEARCH_CURRENT = 1,
   RESEARCH_PERCENT = 2,
-  RESEARCH_VALUE = 3,
-  RESEARCH_TOTAL = 4,
-  RESEARCH_STATUS_START = 5,
-  RESEARCH_STATUS_END = 6,
-  NEXT_FREE = 7,
+  RESEARCH_CURRENT_VALUE = 3,
+  RESEARCH_REMAINING_VALUE = 4,
+  RESEARCH_TOTAL = 5,
+  RESEARCH_STATUS_START = 6,
+  RESEARCH_STATUS_END = 7,
+  NEXT_FREE = 8,
 }
 
 --- @type table<string, LuaRecipePrototype[]> A table of recipes by technology name.
@@ -55,6 +56,8 @@ local recipes_by_tech = {}
 local items_by_tech = {}
 --- @type table<string, LuaFluidPrototype[]> A table of fluids by technology name.
 local fluid_by_tech = {}
+--- @type table<string, ResearchIngredient[]> A table of science packs by technology name.
+local science_packs_by_tech = {}
 local qualities = {}
 
 --- Initializes the research automation combinator data.  Called when the mod is loaded.
@@ -110,6 +113,16 @@ function init_rac_data()
         end
       end
     end
+
+    -- Build science packs by technology (science packs required to research a tech)
+    if tech.research_unit_ingredients then
+      science_packs_by_tech[tech_name] = {}
+      for _, ingredient in ipairs(tech.research_unit_ingredients) do
+        if ingredient then
+          table.insert(science_packs_by_tech[tech_name], ingredient)
+        end
+      end
+    end
   end
 end
 
@@ -128,11 +141,13 @@ end
 --- @field get_research_successors boolean Indicates that we should return the tech successors.
 --- @field get_research_recipes boolean Indicates that we should return the recipes unlocked by the tech.
 --- @field get_research_items boolean Indicates that we should return the items unlocked by the tech.
+--- @field get_research_science_packs boolean Indicates that we should return the science packs required by the tech.
 --- @field output_current_research boolean Indicates we should output the current research.
 --- @field output_research_progress_percent boolean Indicates we should output the research progress as a percentage.
 --- @field output_research_progress_percent_signal SignalID? The signal used for the research progress percentage.
 --- @field output_research_progress_value boolean Indicates we should output the research progress as a value.
---- @field output_research_progress_value_vsignal SignalID? The signal used for the research progress value.
+--- @field output_research_progress_value_csignal SignalID? The signal used for the research progress current value.
+--- @field output_research_progress_value_rsignal SignalID? The signal used for the research progress remaining.
 --- @field output_research_progress_value_tsignal SignalID? The signal used for the research progress total. 
 --- @field output_research_by_status OutputResearchByStatus Indicates which research to output based on status.
 --- @field previous_signals Signal[]? The signals from the previous processed tick.
@@ -149,6 +164,7 @@ ResearchAutomationCombinator = {
   get_research_successors = false,
   get_research_recipes = false,
   get_research_items = false,
+  get_research_science_packs = false,
   output_current_research = false,
   output_research_progress_percent = false,
   output_research_progress_percent_signal = {
@@ -156,7 +172,11 @@ ResearchAutomationCombinator = {
     type = "virtual",
   },
   output_research_progress_value = false,
-  output_research_progress_value_vsignal = {
+  output_research_progress_value_csignal = {
+    name = "signal-C",
+    type = "virtual",
+  },
+  output_research_progress_value_rsignal = {
     name = "signal-R",
     type = "virtual",
   },
@@ -367,6 +387,9 @@ function ResearchAutomationCombinator:update_combinator()
   if self.get_research_items then
     input_mask = bit32.bor(input_mask, 0x20)
   end
+  if self.get_research_science_packs then
+    input_mask = bit32.bor(input_mask, 0x40)
+  end
 
   cb.set_condition(5, {
     compare_type = "and",
@@ -379,10 +402,11 @@ function ResearchAutomationCombinator:update_combinator()
   --     * ≠ Off
   --   * The first_signal represents the research value signal
   --   * The second_signal represents the total research signal
+  --   * The second_signal of the next condition represents the research remaining signal
   cb.set_condition(6, {
     compare_type = "and",
     comparator = self.output_research_progress_value and "=" or "≠",
-    first_signal = self.output_research_progress_value_vsignal,
+    first_signal = self.output_research_progress_value_csignal,
     second_signal = self.output_research_progress_value_tsignal,
   })
 
@@ -409,6 +433,7 @@ function ResearchAutomationCombinator:update_combinator()
     compare_type = "and",
     comparator = self.output_research_progress_percent and "=" or "≠",
     first_signal = self.output_research_progress_percent_signal,
+    second_signal = self.output_research_progress_value_rsignal,
     constant = output_mask,
   })
 
@@ -418,7 +443,8 @@ function ResearchAutomationCombinator:update_combinator()
     self:remove_output(OUTPUT_SIGNAL_INDEX.RESEARCH_PERCENT)
   end
   if not self.output_research_progress_value then
-    self:remove_output(OUTPUT_SIGNAL_INDEX.RESEARCH_VALUE)
+    self:remove_output(OUTPUT_SIGNAL_INDEX.RESEARCH_CURRENT_VALUE)
+    self:remove_output(OUTPUT_SIGNAL_INDEX.RESEARCH_REMAINING_VALUE)
     self:remove_output(OUTPUT_SIGNAL_INDEX.RESEARCH_TOTAL)
   end
 
@@ -448,17 +474,19 @@ function ResearchAutomationCombinator:configure_from_combinator()
   self.get_research_successors = bit32.band(input_mask, 0x08) ~= 0
   self.get_research_recipes = bit32.band(input_mask, 0x10) ~= 0
   self.get_research_items = bit32.band(input_mask, 0x20) ~= 0
+  self.get_research_science_packs = bit32.band(input_mask, 0x40) ~= 0
 
   -- Read research (value)
   local read_research_value_cond = cb.get_condition(6)
   self.output_research_progress_value = read_research_value_cond.comparator == "="
-  self.output_research_progress_value_vsignal = read_research_value_cond.first_signal
+  self.output_research_progress_value_csignal = read_research_value_cond.first_signal
   self.output_research_progress_value_tsignal = read_research_value_cond.second_signal
 
   -- Read research (%)
   local read_research_percent_cond = cb.get_condition(7)
   self.output_research_progress_percent = read_research_percent_cond.comparator == "="
   self.output_research_progress_percent_signal = read_research_percent_cond.first_signal
+  self.output_research_progress_value_rsignal = read_research_percent_cond.second_signal
 
   -- Get output conditions
   local output_mask = read_research_percent_cond.constant or 0
@@ -491,10 +519,14 @@ function ResearchAutomationCombinator:on_tick()
       not self.get_research_successors and
       not self.get_research_recipes and
       not self.get_research_items and
+      not self.get_research_science_packs and
       not self.output_research_progress_percent and
       not self.output_research_progress_value
   ) then
-    return
+    -- Even if nothing is enabled, if settings just changed we need to rebuild outputs to clear them
+    if not self.tick_settings_changed then
+      return
+    end
   end
 
   -- Next opportunity to exit early is if we have a disable condition.
@@ -529,7 +561,7 @@ function ResearchAutomationCombinator:on_tick()
 
   -- Process things that don't care about input signals first
   if (self.output_research_progress_percent and self.output_research_progress_percent_signal or
-      (self.output_research_progress_value and self.output_research_progress_value_tsignal and self.output_research_progress_value_vsignal)) then
+      (self.output_research_progress_value and (self.output_research_progress_value_csignal or self.output_research_progress_value_rsignal or self.output_research_progress_value_tsignal))) then
     local tech = game.forces.player.current_research
     local progress = game.forces.player.research_progress or 0
     if tech then
@@ -537,9 +569,16 @@ function ResearchAutomationCombinator:on_tick()
       if (self.output_research_progress_percent and self.output_research_progress_percent_signal) then
         signals[#signals+1] = OUTPUT_SIGNAL_INDEX.RESEARCH_PERCENT
       end
-      if (self.output_research_progress_value and self.output_research_progress_value_tsignal and self.output_research_progress_value_vsignal) then
-        signals[#signals+1] = OUTPUT_SIGNAL_INDEX.RESEARCH_VALUE
-        signals[#signals+1] = OUTPUT_SIGNAL_INDEX.RESEARCH_TOTAL
+      if (self.output_research_progress_value) then
+        if (self.output_research_progress_value_tsignal) then
+          signals[#signals+1] = OUTPUT_SIGNAL_INDEX.RESEARCH_TOTAL
+        end
+        if (self.output_research_progress_value_csignal) then
+          signals[#signals+1] = OUTPUT_SIGNAL_INDEX.RESEARCH_CURRENT_VALUE
+        end
+        if (self.output_research_progress_value_rsignal) then
+          signals[#signals+1] = OUTPUT_SIGNAL_INDEX.RESEARCH_REMAINING_VALUE
+        end
       end
 
       for _, i in ipairs(signals) do
@@ -561,8 +600,10 @@ function ResearchAutomationCombinator:on_tick()
           end
 
           -- Convert to a value
-          if (i == OUTPUT_SIGNAL_INDEX.RESEARCH_VALUE) then
+          if (i == OUTPUT_SIGNAL_INDEX.RESEARCH_CURRENT_VALUE) then
             value = math.floor(value * progress)
+          elseif (i == OUTPUT_SIGNAL_INDEX.RESEARCH_REMAINING_VALUE) then
+            value = math.floor(value * (1 - progress))
           end
         else
           value = self.cached_research_info[i]
@@ -577,7 +618,8 @@ function ResearchAutomationCombinator:on_tick()
 
           -- Build the output table
           local signal = i == OUTPUT_SIGNAL_INDEX.RESEARCH_PERCENT and self.output_research_progress_percent_signal or
-            i == OUTPUT_SIGNAL_INDEX.RESEARCH_VALUE and self.output_research_progress_value_vsignal or
+            i == OUTPUT_SIGNAL_INDEX.RESEARCH_CURRENT_VALUE and self.output_research_progress_value_csignal or
+            i == OUTPUT_SIGNAL_INDEX.RESEARCH_REMAINING_VALUE and self.output_research_progress_value_rsignal or
             i == OUTPUT_SIGNAL_INDEX.RESEARCH_TOTAL and self.output_research_progress_value_tsignal or nil
           local output = {
             signal = signal,
@@ -679,6 +721,16 @@ function ResearchAutomationCombinator:on_tick()
         local fluid_name = fluid.name
         output_signals["fluid"][fluid_name] = output_signals["fluid"][fluid_name] or {}
         output_signals["fluid"][fluid_name][quality] = (output_signals["fluid"][fluid_name][quality] or 0) + s.count
+      end
+    end
+
+    -- Get science packs required by technology
+    if (self.get_research_science_packs) then
+      for _, item in ipairs(science_packs_by_tech[tech_name] or {}) do
+        local item_name = item.name
+        local count = s.count == 1 and s.count or item.amount
+        output_signals["item"][item_name] = output_signals["item"][item_name] or {}
+        output_signals["item"][item_name][quality] = (output_signals["item"][item_name][quality] or 0) + count
       end
     end
   end

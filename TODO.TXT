@@ -7,7 +7,6 @@ RELEASE PREPARATION
 
 *** Localization
 * [TODO] Complete entity description in locale/en/rac.cfg (currently "TODO: RAC description")
-* [TODO] Add descriptions for all GUI modes and operations
 
 *** Graphics & Assets
 * [TODO] Create mod portal thumbnail/preview image
