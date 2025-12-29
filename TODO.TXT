@@ -13,4 +13,4 @@ RELEASE PREPARATION
 
 CODE QUALITY & CLEANUP
 * [TODO] Implement proper handling for tech levels > 9 (signal.lua line 50-51)
-* [TODO] Proper handling of infinite techs
+* [TODO] Proper handling of infinite techs (signal output for prereq & follower)
