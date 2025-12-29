@@ -5,5 +5,12 @@
   "author": "nightingale",
   "description": "Test description",
   "factorio_version": "2.0",
-  "dependencies": ["base >= 2.0.0", "?space-age"]
+  "dependencies": ["base >= 2.0.0", "?space-age"],
+  "package": {
+    "ignore": [
+      "graphics/icons/*.xcf",
+      "graphics/entity/*.xcf",
+      "TODO.TXT"
+    ]
+  }
 }
