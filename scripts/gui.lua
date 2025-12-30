@@ -83,7 +83,7 @@ function create_gui(player, entity)
   }.add{
     type="label",
     style="subheader_caption_label",
-    caption={"rac-inputs"},
+    caption={"rac-input-label"},
   }
   local f = research_input_mode.add{
     type="frame",
@@ -188,12 +188,57 @@ function create_gui(player, entity)
     tags={rac=true, radiobutton_group="queue_tech"},
   }
 
-  f.add{
+  research_input_mode.add{
+    type="frame",
+    style="rac_subheader_frame",
+  }.add{
+    type="label",
+    style="subheader_caption_label",
+    caption={"rac-input-output-label"},
+  }
+
+  local f2 = research_input_mode.add{
+    type="frame",
+    name="f2",
+    direction="vertical",
+    style="inside_shallow_frame_with_padding_and_vertical_spacing",
+  }
+
+  f2.add{
+    type="label",
+    caption={"rac-io-mode-label"},
+    style="bold_label",
+  }
+
+  f2.add{
+    type="radiobutton",
+    name="io_mode_value",
+    caption={"rac-io-mode-input-value"},
+    tooltip = {"rac-io-mode-input-value-description"},
+    state=true,
+    tags={rac=true, radiobutton_group="io_mode"},
+  }
+  f2.add{
+    type="radiobutton",
+    name="io_mode_context",
+    caption={"rac-io-mode-input-context"},
+    tooltip = {"rac-io-mode-input-context-description"},
+    state=false,
+    tags={rac=true, radiobutton_group="io_mode"},
+  }
+
+  f2.add{
     type="line",
     style="inside_shallow_frame_with_padding_line",
   }
 
-  f.add{
+  f2.add{
+    type="label",
+    caption={"rac-output-signals"},
+    style="bold_label",
+  }
+
+  f2.add{
     type="checkbox",
     name="research_get_prereq",
     style="checkbox",
@@ -202,7 +247,7 @@ function create_gui(player, entity)
     tags = { rac=true },
     state = false,
   }
-  f.add{
+  f2.add{
     type="checkbox",
     name="research_get_successors",
     style="checkbox",
@@ -211,7 +256,7 @@ function create_gui(player, entity)
     tags = { rac=true },
     state = false,
   }
-  f.add{
+  f2.add{
     type="checkbox",
     name="research_get_recipes",
     style="checkbox",
@@ -220,7 +265,7 @@ function create_gui(player, entity)
     tags = { rac=true },
     state = false,
   }
-  f.add{
+  f2.add{
     type="checkbox",
     name="research_get_items",
     style="checkbox",
@@ -229,7 +274,7 @@ function create_gui(player, entity)
     tags = { rac=true },
     state = false,
   }
-  f.add{
+  f2.add{
     type="checkbox",
     name="research_get_science_packs",
     style="checkbox",
@@ -252,7 +297,7 @@ function create_gui(player, entity)
   }.add{
     type="label",
     style="subheader_caption_label",
-    caption={"rac-outputs"},
+    caption={"rac-output-label"},
   }
   f = research_output_mode.add{
     type="flow",
@@ -460,11 +505,15 @@ function update_object_from_gui()
     (input.queue_tech_front.state and SET_RESEARCH_MODE.ADD_FRONT) or
     (input.queue_tech_back.state and SET_RESEARCH_MODE.ADD_BACK) or
     SET_RESEARCH_MODE.REPLACE_QUEUE
-  rac.get_research_prereq = input.research_get_prereq.state
-  rac.get_research_successors = input.research_get_successors.state
-  rac.get_research_recipes = input.research_get_recipes.state
-  rac.get_research_items = input.research_get_items.state
-  rac.get_research_science_packs = input.research_get_science_packs.state
+
+  -- Convert input/output side values to class values
+  local io = storage.gui.content.h.research_input_mode.f2
+  rac.get_research_prereq = io.research_get_prereq.state
+  rac.get_research_successors = io.research_get_successors.state
+  rac.get_research_recipes = io.research_get_recipes.state
+  rac.get_research_items = io.research_get_items.state
+  rac.get_research_science_packs = io.research_get_science_packs.state
+  rac.io_mode = io.io_mode_context.state and 1 or 0
 
   -- Convert output side values to class values
   local output = storage.gui.content.h.research_output_mode.f
@@ -522,12 +571,16 @@ function update_gui_from_object()
     storage.gui.content.h.research_input_mode.f.queue_tech_back.state = rac.set_research_mode == SET_RESEARCH_MODE.ADD_BACK
   end
 
+  -- IO mode (for output signals)
+  storage.gui.content.h.research_input_mode.f2.io_mode_value.state = rac.io_mode == 0
+  storage.gui.content.h.research_input_mode.f2.io_mode_context.state = rac.io_mode ~= 0
+
   -- Technology input/output details
-  storage.gui.content.h.research_input_mode.f.research_get_prereq.state = rac.get_research_prereq
-  storage.gui.content.h.research_input_mode.f.research_get_successors.state = rac.get_research_successors
-  storage.gui.content.h.research_input_mode.f.research_get_recipes.state = rac.get_research_recipes
-  storage.gui.content.h.research_input_mode.f.research_get_items.state = rac.get_research_items
-  storage.gui.content.h.research_input_mode.f.research_get_science_packs.state = rac.get_research_science_packs
+  storage.gui.content.h.research_input_mode.f2.research_get_prereq.state = rac.get_research_prereq
+  storage.gui.content.h.research_input_mode.f2.research_get_successors.state = rac.get_research_successors
+  storage.gui.content.h.research_input_mode.f2.research_get_recipes.state = rac.get_research_recipes
+  storage.gui.content.h.research_input_mode.f2.research_get_items.state = rac.get_research_items
+  storage.gui.content.h.research_input_mode.f2.research_get_science_packs.state = rac.get_research_science_packs
 
   -- Set output states
   storage.gui.content.h.research_output_mode.f.h.signal_percent_label.enabled = rac.output_research_progress_percent

@@ -38,6 +38,12 @@ OUTPUT_RESEARCH_BY_STATUS = {
   UNRESEARCHED = 3,
 }
 
+--- @enum IOMode
+IO_MODE = {
+  INPUT_VALUE = 0,
+  CONTEXT = 1,
+}
+
 --- @enum OutputSignalIndex
 local OUTPUT_SIGNAL_INDEX = {
   RESEARCH_CURRENT = 1,
@@ -80,7 +86,6 @@ function init_rac_data()
   if (#qualities == 0) then
     qualities = { "normal" }
   end
-  -- TODO - test without quality
 
   -- Get all technology that has unlocks
   local tech_prototypes = prototypes.get_technology_filtered{
@@ -142,6 +147,7 @@ end
 --- @field get_research_recipes boolean Indicates that we should return the recipes unlocked by the tech.
 --- @field get_research_items boolean Indicates that we should return the items unlocked by the tech.
 --- @field get_research_science_packs boolean Indicates that we should return the science packs required by the tech.
+--- @field io_mode IOMode Indicates whether output values should be derived from input signals or context-based (0=input_value, 1=context).
 --- @field output_current_research boolean Indicates we should output the current research.
 --- @field output_research_progress_percent boolean Indicates we should output the research progress as a percentage.
 --- @field output_research_progress_percent_signal SignalID? The signal used for the research progress percentage.
@@ -165,6 +171,7 @@ ResearchAutomationCombinator = {
   get_research_recipes = false,
   get_research_items = false,
   get_research_science_packs = false,
+  io_mode = IO_MODE.INPUT_VALUE,
   output_current_research = false,
   output_research_progress_percent = false,
   output_research_progress_percent_signal = {
@@ -267,7 +274,7 @@ function ResearchAutomationCombinator:combinator_is_valid()
   -- Check if the control behavior is valid and has the correct number of conditions
   --- @type LuaDeciderCombinatorControlBehavior
   local cb = self.entity.get_control_behavior()
-  if not cb or #cb.parameters.conditions ~= 7 then return false end
+  if not cb or #cb.parameters.conditions ~= 8 then return false end
 
   -- Check version is supported
   local version = cb.get_condition(3).constant
@@ -287,34 +294,12 @@ function ResearchAutomationCombinator:is_dirty()
   -- Get control behaviour
   --- @type LuaDeciderCombinatorControlBehavior
   local cb = self.entity.get_control_behavior()
+  if not cb or #cb.parameters.conditions ~= 8 then return true end
 
-  -- Check for the dirty flag in the version condition - both red and green signals should be set to false in both signals
-  local version_condition = cb.get_condition(3)
-  if not version_condition.first_signal_networks or not version_condition.second_signal_networks then
-    return false
-  end
-
-  return (not version_condition.first_signal_networks.green) and (not version_condition.second_signal_networks.green) and
-    (not version_condition.first_signal_networks.red) and (not version_condition.second_signal_networks.red)
-end
-
---- Marks whether the object should be considered dirty.
----@param dirty boolean Dirty status.
-function ResearchAutomationCombinator:mark_dirty(dirty)
-  -- Get control behaviour
-  --- @type LuaDeciderCombinatorControlBehavior
-  local cb = self.entity.get_control_behavior()
-
-  -- Set the dirty flag in the version condition - both red and green signals should be set to false in both signals to indicate dirty.
-  local version_condition = cb.get_condition(3)
-  if dirty then
-    version_condition.first_signal_networks = { red = false, green = false }
-    version_condition.second_signal_networks = { red = false, green = false }
-  else
-    version_condition.first_signal_networks = nil
-    version_condition.second_signal_networks = nil
-  end
-  cb.set_condition(3, version_condition)
+  -- Check whether our unit_number matches the configured value (check only low 32 bits and hope that's good enough...)
+  local unit_check = cb.get_condition(8)
+  local unit = unit_check.constant or 0
+  return bit32.band(self.entity.unit_number, 0xFFFFFFFF) ~= unit
 end
 
 --- Configures the combinator based on the current state.
@@ -324,8 +309,8 @@ function ResearchAutomationCombinator:update_combinator()
   local cb = self.entity.get_control_behavior()
 
   -- Ensure the combinator has the exact right number of conditions
-  while #cb.parameters.conditions < 7 do cb.add_condition({}) end
-  while #cb.parameters.conditions > 7 do cb.remove_condition(#cb.parameters.conditions) end
+  while #cb.parameters.conditions < 8 do cb.add_condition({}) end
+  while #cb.parameters.conditions > 8 do cb.remove_condition(#cb.parameters.conditions) end
 
   --- @type DeciderCombinatorCondition
   local condition = {
@@ -360,7 +345,7 @@ function ResearchAutomationCombinator:update_combinator()
   condition.compare_type = "and"
   cb.set_condition(4, table.deepcopy(condition))
 
-  -- Fifth condition covers the rest of the input options:
+  -- Fifth condition covers the input and output options:
   --   * The constant value encodes the remaining options in a bitwise fashion:
   --     * Bit 1+2: Modify research options:
   --         00: Off
@@ -371,29 +356,45 @@ function ResearchAutomationCombinator:update_combinator()
   --     * Bit 4: Get tech successors
   --     * Bit 5: Get recipes unlocked by tech
   --     * Bit 6: Get items unlocked by tech
-  -- Remaining input conditions go in the constant of condition 4 via a bitmask
+  --     * Bit 7: Get science packs required by tech
+  --     * Bit 8: I/O Mode
+  --     * Bit 9+10: Output research by status
+  --         00: disabled
+  --         01: researched techs
+  --         10: available techs
+  --         11: unresearched techs
+  --     * Bit 11: Read current research
   --- @type uint32
-  local input_mask = self.set_research_mode
+  local mask = self.set_research_mode
 
   if self.get_research_prereq then
-    input_mask = bit32.bor(input_mask, 0x04)
+    mask = bit32.bor(mask, 0x04)
   end
   if self.get_research_successors then
-    input_mask = bit32.bor(input_mask, 0x08)
+    mask = bit32.bor(mask, 0x08)
   end
   if self.get_research_recipes then
-    input_mask = bit32.bor(input_mask, 0x10)
+    mask = bit32.bor(mask, 0x10)
   end
   if self.get_research_items then
-    input_mask = bit32.bor(input_mask, 0x20)
+    mask = bit32.bor(mask, 0x20)
   end
   if self.get_research_science_packs then
-    input_mask = bit32.bor(input_mask, 0x40)
+    mask = bit32.bor(mask, 0x40)
+  end
+  if self.io_mode ~= IO_MODE.INPUT_VALUE then
+    mask = bit32.bor(mask, 0x80)
+  end
+  if (self.output_research_by_status ~= OUTPUT_RESEARCH_BY_STATUS.NONE) then
+    mask = bit32.bor(mask, bit32.lshift(self.output_research_by_status, 8))
+  end
+  if (self.output_current_research) then
+    mask = bit32.bor(mask, 0x0400)
   end
 
   cb.set_condition(5, {
     compare_type = "and",
-    constant = input_mask,
+    constant = mask,
   })
 
   -- Sixth condition is the Read Research Progress (value)
@@ -415,26 +416,18 @@ function ResearchAutomationCombinator:update_combinator()
   --     * = On
   --     * ≠ Off
   --   * The first_signal represents the percent signal
-  --   * The constant value encodes the remaining options in a bitwise fashion:
-  --     * Bit 1+2: Read research status
-  --         00: disabled
-  --         01: researched techs
-  --         10: available techs
-  --         11: unresearched techs
-  --     * Bit 3: Read current research
-  --- @type uint32
-  local output_mask = self.output_research_by_status
-  if self.output_current_research then
-    output_mask = bit32.bor(output_mask, 0x04)
-  end
-
-  -- Set the rest of condition 6 based on the read research progress (%) settings
   cb.set_condition(7, {
     compare_type = "and",
     comparator = self.output_research_progress_percent and "=" or "≠",
     first_signal = self.output_research_progress_percent_signal,
     second_signal = self.output_research_progress_value_rsignal,
-    constant = output_mask,
+  })
+
+  -- Eighth condition is used for dirty checks:
+    --   * The constant encodes the unit number (low 32 bits) to help with dirty checks
+  cb.set_condition(8, {
+    compare_type = "and",
+    constant = bit32.band(self.entity.unit_number, 0xFFFFFFFF),
   })
 
   -- Clear states and remove progress signals if features are disabled
@@ -457,7 +450,7 @@ end
 function ResearchAutomationCombinator:configure_from_combinator()
   --- @type LuaDeciderCombinatorControlBehavior
   local cb = self.entity.get_control_behavior()
-  if not cb or #cb.parameters.conditions ~= 7 then return false end
+  if not cb or #cb.parameters.conditions ~= 8 then return false end
 
   -- Get the enabled conditions
   local enabled_cond = cb.get_condition(4)
@@ -468,33 +461,44 @@ function ResearchAutomationCombinator:configure_from_combinator()
   self.enabled_comparator = enabled_cond.comparator or "<"
 
   -- Get input conditions
-  local input_mask = cb.get_condition(5).constant or 0
-  self.set_research_mode = bit32.band(input_mask, 0x03)
-  self.get_research_prereq = bit32.band(input_mask, 0x04) ~= 0
-  self.get_research_successors = bit32.band(input_mask, 0x08) ~= 0
-  self.get_research_recipes = bit32.band(input_mask, 0x10) ~= 0
-  self.get_research_items = bit32.band(input_mask, 0x20) ~= 0
-  self.get_research_science_packs = bit32.band(input_mask, 0x40) ~= 0
+  local mask = cb.get_condition(5).constant or 0
+  self.set_research_mode = bit32.band(mask, 0x03)
+  self.get_research_prereq = bit32.band(mask, 0x04) ~= 0
+  self.get_research_successors = bit32.band(mask, 0x08) ~= 0
+  self.get_research_recipes = bit32.band(mask, 0x10) ~= 0
+  self.get_research_items = bit32.band(mask, 0x20) ~= 0
+  self.get_research_science_packs = bit32.band(mask, 0x40) ~= 0
+  self.io_mode = bit32.band(mask, 0x80) ~= 0 and 1 or 0
+
+  -- Get output conditions
+  self.output_research_by_status = bit32.rshift(bit32.band(mask, 0x0300), 8)
+  self.output_current_research = bit32.band(mask, 0x0400) ~= 0
 
   -- Read research (value)
   local read_research_value_cond = cb.get_condition(6)
   self.output_research_progress_value = read_research_value_cond.comparator == "="
   self.output_research_progress_value_csignal = read_research_value_cond.first_signal
   self.output_research_progress_value_tsignal = read_research_value_cond.second_signal
-
+  
   -- Read research (%)
   local read_research_percent_cond = cb.get_condition(7)
   self.output_research_progress_percent = read_research_percent_cond.comparator == "="
   self.output_research_progress_percent_signal = read_research_percent_cond.first_signal
   self.output_research_progress_value_rsignal = read_research_percent_cond.second_signal
 
-  -- Get output conditions
-  local output_mask = read_research_percent_cond.constant or 0
-  self.output_research_by_status = bit32.band(output_mask, 0x03)
-  self.output_current_research = bit32.band(output_mask, 0x04) ~= 0
-
-  -- Clear the dirty flag
-  self:mark_dirty(false)
+  -- Position 8 contains the unit number - we store this for dirty checks
+  local low_unit_number = bit32.band(self.entity.unit_number, 0xFFFFFFFF)
+  if (#cb.parameters.conditions < 8) then
+    cb.add_condition({
+      compare_type = "and",
+      constant = low_unit_number,
+    })
+  end
+  local unit_check = cb.get_condition(8)
+  if (unit_check.constant ~= low_unit_number) then
+    unit_check.constant = low_unit_number
+    cb.set_condition(8, unit_check)
+  end
 
   -- Call handlers to make sure everything is properly updated
   self:on_research_change(nil)
@@ -684,19 +688,44 @@ function ResearchAutomationCombinator:on_tick()
 
     -- Get technology prerequisites
     if (self.get_research_prereq) then
-      for ptech_name, _ in pairs(tech.prerequisites or {}) do
-        local signal_name = "rac-technology-" .. ptech_name
-        output_signals["virtual"][signal_name] = output_signals["virtual"][signal_name] or {}
-        output_signals["virtual"][signal_name][quality] = (output_signals["virtual"][signal_name][quality] or 0) + s.count
+      -- Get prerequisite for "normal" versions of technologies
+      if (self.io_mode == IO_MODE.INPUT_VALUE or
+          s.count == tech.prototype.level or
+          tech.prototype.level == tech.prototype.max_level)
+      then
+        for ptech_name, ptech in pairs(tech.prerequisites or {}) do
+          local signal_name = "rac-technology-" .. ptech_name
+          local value = self.io_mode == IO_MODE.INPUT_VALUE and s.count or ptech.prototype.level
+          output_signals["virtual"][signal_name] = output_signals["virtual"][signal_name] or {}
+          output_signals["virtual"][signal_name][quality] = (output_signals["virtual"][signal_name][quality] or 0) + value
+        end
+      -- Handle infinite technologies
+      elseif (s.count > tech.prototype.level) then
+        local value = s.count - 1
+        output_signals["virtual"][s.signal.name] = output_signals["virtual"][s.signal.name] or {}
+        output_signals["virtual"][s.signal.name][quality] = (output_signals["virtual"][s.signal.name][quality] or 0) + value
       end
+
     end
 
     -- Get technology successors
     if (self.get_research_successors) then
-      for stech_name, _ in pairs(tech.successors or {}) do
-        local signal_name = "rac-technology-" .. stech_name
-        output_signals["virtual"][signal_name] = output_signals["virtual"][signal_name] or {}
-        output_signals["virtual"][signal_name][quality] = (output_signals["virtual"][signal_name][quality] or 0) + s.count
+      -- Get successors for "normal" versions of technologies
+      if (self.io_mode == IO_MODE.INPUT_VALUE or
+          s.count < tech.prototype.level or
+          tech.prototype.level == tech.prototype.max_level)
+      then
+        for stech_name, stech in pairs(tech.successors or {}) do
+          local signal_name = "rac-technology-" .. stech_name
+          local value = self.io_mode == IO_MODE.INPUT_VALUE and s.count or stech.prototype.level
+          output_signals["virtual"][signal_name] = output_signals["virtual"][signal_name] or {}
+          output_signals["virtual"][signal_name][quality] = (output_signals["virtual"][signal_name][quality] or 0) + value
+        end
+      -- Handle infinite technologies
+      elseif (s.count < tech.prototype.max_level) then
+        local value = s.count + 1
+        output_signals["virtual"][s.signal.name] = output_signals["virtual"][s.signal.name] or {}
+        output_signals["virtual"][s.signal.name][quality] = (output_signals["virtual"][s.signal.name][quality] or 0) + value
       end
     end
 
@@ -728,7 +757,7 @@ function ResearchAutomationCombinator:on_tick()
     if (self.get_research_science_packs) then
       for _, item in ipairs(science_packs_by_tech[tech_name] or {}) do
         local item_name = item.name
-        local count = s.count == 1 and s.count or item.amount
+        local count = self.io_mode == 0 and s.count or item.amount
         output_signals["item"][item_name] = output_signals["item"][item_name] or {}
         output_signals["item"][item_name][quality] = (output_signals["item"][item_name][quality] or 0) + count
       end
@@ -868,7 +897,10 @@ function ResearchAutomationCombinator:remove_output(name, cb)
   end
 
   -- If we removed the last research status signal, clear it out
-  if self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_STATUS_END] and self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_STATUS_END] < self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_STATUS_START] then
+  if (self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_STATUS_START] and
+      self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_STATUS_END] and
+      self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_STATUS_END] < self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_STATUS_START]
+  ) then
     self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_STATUS_START] = nil
     self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_STATUS_END] = nil
   end

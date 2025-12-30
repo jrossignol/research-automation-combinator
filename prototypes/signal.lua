@@ -274,15 +274,11 @@ function signal_module.create_initial_signals()
   init_all_subgroups()
   
   local tech_signals = {}
-  local signal_debug_info = {created = {}, skipped = {}}
 
   for name, tech in pairs(data.raw.technology) do
     if not tech.hidden then
       local signal = create_tech_signal(tech)
       table.insert(tech_signals, signal)
-      signal_debug_info.created[signal.name] = tech.name
-    else
-      signal_debug_info.skipped["rac-technology-" .. name] = "tech is hidden"
     end
   end
 

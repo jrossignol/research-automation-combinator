@@ -43,28 +43,6 @@ function on_research_queue_change(event)
   end
 end
 
---- After selecting an area with a blueprint
---- @param event EventData.on_player_setup_blueprint
-function on_player_setup_blueprint(event)
-  local player = game.players[event.player_index]
-	local blueprint = player.blueprint_to_setup
-	if not blueprint.valid_for_read then blueprint = player.cursor_stack end
-	if not blueprint or not blueprint.valid_for_read then return end
-
-  --- @type table<uint, LuaEntity>
-  local mapping = event.mapping.get()
-  for index, entity in pairs(mapping) do
-    -- Mark any research automation combinators as dirty (this will force them to be recreated from the combinator data)
-    if entity.name == "research-automation-combinator" then
-      local rac = ResearchAutomationCombinator:get_from_entity(entity)
-      if rac then
-        rac:mark_dirty(true)
-      end
-    end
-  end
-end
-
-
 --- Handler for a new research combinator being created.
 ---@param event EventData.on_built_entity|EventData.on_robot_built_entity|EventData.on_space_platform_built_entity|EventData.on_entity_cloned|EventData.script_raised_built|EventData.script_raised_revive|EventData.on_entity_settings_pasted
 function on_created_entity(event)
@@ -111,8 +89,6 @@ for _, event in ipairs({
     {filter = "name", name = "research-automation-combinator"},
   })
 end
-
-script.on_event(defines.events.on_player_setup_blueprint, on_player_setup_blueprint)
 
 
 -- We have two handlers for research events, one for the research queue and one for the research itself.  Some events will trigger both.
