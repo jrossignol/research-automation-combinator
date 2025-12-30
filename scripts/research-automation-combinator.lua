@@ -135,6 +135,7 @@ end
 --- Class that holds the research combinator details in an easy to use way.
 --- @class ResearchAutomationCombinator
 --- @field entity LuaEntity The associated decider combinator entity.
+--- @field cb LuaDeciderCombinatorControlBehavior The associated decider combinator control behavior.
 --- @field version uint32 The version of the research automation combinator (used for migration logic).
 --- @field enabled_state boolean State of the enabled condition.
 --- @field enabled_lhs SignalID? The left hand side signal of the enabled condition.
@@ -202,10 +203,12 @@ function ResearchAutomationCombinator:new(entity)
   -- Setup object
   local this = {
     entity = entity,
+    cb = entity.get_control_behavior(),
     indexes = {
       [OUTPUT_SIGNAL_INDEX.NEXT_FREE] = 1,
     },
   }
+
   --- @type table<integer, ResearchAutomationCombinator>
   storage.research_combinators[entity.unit_number] = setmetatable(this, self)
 
@@ -218,6 +221,15 @@ function ResearchAutomationCombinator:new(entity)
   this:update_combinator()
 
   return this
+end
+
+--- Gets the control behavior of the research automation combinator.
+--- @return LuaDeciderCombinatorControlBehavior cb The control behavior of the research automation combinator.
+function ResearchAutomationCombinator:get_control_behavior()
+  if (not self.cb or not self.cb.valid or self.cb.entity.unit_number ~= self.entity.unit_number) then
+    self.cb = self.entity.get_control_behavior()
+  end
+  return self.cb
 end
 
 --- Gets the ResearchAutomationCombinator from storage.
@@ -273,7 +285,7 @@ end
 function ResearchAutomationCombinator:combinator_is_valid()
   -- Check if the control behavior is valid and has the correct number of conditions
   --- @type LuaDeciderCombinatorControlBehavior
-  local cb = self.entity.get_control_behavior()
+  local cb = self:get_control_behavior()
   if not cb then return false end
   --- @type DeciderCombinatorParameters
   local parameters = cb.parameters
@@ -296,7 +308,7 @@ end
 function ResearchAutomationCombinator:is_dirty()
   -- Get control behaviour
   --- @type LuaDeciderCombinatorControlBehavior
-  local cb = self.entity.get_control_behavior()
+  local cb = self:get_control_behavior()
   if not cb then return true end
   --- @type DeciderCombinatorParameters
   local parameters = cb.parameters
@@ -312,7 +324,7 @@ end
 --- @param self ResearchAutomationCombinator The object to configure the combinator for.
 function ResearchAutomationCombinator:update_combinator()
   --- @type LuaDeciderCombinatorControlBehavior
-  local cb = self.entity.get_control_behavior()
+  local cb = self:get_control_behavior()
 
   -- Ensure the combinator has the exact right number of conditions
   while #cb.parameters.conditions < 8 do cb.add_condition({}) end
@@ -454,7 +466,7 @@ end
 --- Sets up the object based on what is read from the combinator
 function ResearchAutomationCombinator:configure_from_combinator()
   --- @type LuaDeciderCombinatorControlBehavior
-  local cb = self.entity.get_control_behavior()
+  local cb = self:get_control_behavior()
   --- @type DeciderCombinatorParameters
   local parameters = cb.parameters
 
@@ -500,13 +512,21 @@ function ResearchAutomationCombinator:configure_from_combinator()
     cb.set_condition(8, unit_check)
   end
 
+  -- Clear existing outputs
+  for i = #parameters.outputs, 1, -1 do
+    cb.remove_output(i)
+  end
+  self.indexes = {
+    [OUTPUT_SIGNAL_INDEX.NEXT_FREE] = 1,
+  }
+  self.cached_research_info = {}
+
   -- Call handlers to make sure everything is properly updated
   self:on_research_change(nil)
   self:on_research_queue_change(nil)
 
   -- Assume tick settings have changed
   self.tick_settings_changed = true
-
 end
 
 
@@ -564,7 +584,7 @@ function ResearchAutomationCombinator:on_tick()
   end
 
   --- @type LuaDeciderCombinatorControlBehavior
-  local cb = self.entity.get_control_behavior()
+  local cb = self:get_control_behavior()
   local parameters = cb.parameters
   if parameters == nil then
     parameters = {
@@ -871,7 +891,7 @@ end
 function ResearchAutomationCombinator:add_output(name, output, cb)
   --- Get control behavior
   --- @type LuaDeciderCombinatorControlBehavior
-  cb = cb or self.entity.get_control_behavior()
+  cb = cb or self:get_control_behavior()
 
   -- Get the next free index and add the output signal to the combinator
   local index = self.indexes[OUTPUT_SIGNAL_INDEX.NEXT_FREE] or 1
@@ -894,7 +914,7 @@ function ResearchAutomationCombinator:remove_output(name, cb)
 
   --- Remove from the combinator
   --- @type LuaDeciderCombinatorControlBehavior
-  cb = cb or self.entity.get_control_behavior()
+  cb = cb or self:get_control_behavior()
   cb.remove_output(index)
 
   -- Decrement the remaining indexes that were above the removed index
@@ -926,7 +946,7 @@ function ResearchAutomationCombinator:remove_research_status_outputs(cb)
 
   --- Get control behavior if not provided
   --- @type LuaDeciderCombinatorControlBehavior
-  cb = cb or self.entity.get_control_behavior()
+  cb = cb or self:get_control_behavior()
   local parameters = cb.parameters
   if not parameters then return end
 
@@ -1001,7 +1021,7 @@ function ResearchAutomationCombinator:on_research_change(event)
 
     -- Output the techs to the combinator
     --- @type LuaDeciderCombinatorControlBehavior
-    local cb = self.entity.get_control_behavior()
+    local cb = self:get_control_behavior()
 
     -- Add new research status outputs
     if #techs > 0 then
@@ -1043,7 +1063,7 @@ function ResearchAutomationCombinator:on_research_queue_change(event)
       local signal_name = "rac-technology-" .. tech.name
 
       --- @type LuaDeciderCombinatorControlBehavior
-      local cb = self.entity.get_control_behavior()
+      local cb = self:get_control_behavior()
 
       -- Check if the output already exists and is correct
       local current_index = self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_CURRENT]
