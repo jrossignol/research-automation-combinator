@@ -154,7 +154,7 @@ end
 --- @field output_research_progress_value boolean Indicates we should output the research progress as a value.
 --- @field output_research_progress_value_csignal SignalID? The signal used for the research progress current value.
 --- @field output_research_progress_value_rsignal SignalID? The signal used for the research progress remaining.
---- @field output_research_progress_value_tsignal SignalID? The signal used for the research progress total. 
+--- @field output_research_progress_value_tsignal SignalID? The signal used for the research progress total.
 --- @field output_research_by_status OutputResearchByStatus Indicates which research to output based on status.
 --- @field previous_signals Signal[]? The signals from the previous processed tick.
 --- @field tick_settings_changed boolean? Indicates whether the settings with on_tick implications have changed since the last tick.
@@ -274,14 +274,17 @@ function ResearchAutomationCombinator:combinator_is_valid()
   -- Check if the control behavior is valid and has the correct number of conditions
   --- @type LuaDeciderCombinatorControlBehavior
   local cb = self.entity.get_control_behavior()
-  if not cb or #cb.parameters.conditions ~= 8 then return false end
+  if not cb then return false end
+  --- @type DeciderCombinatorParameters
+  local parameters = cb.parameters
+  if not parameters or #parameters.conditions ~= 8 then return false end
 
   -- Check version is supported
-  local version = cb.get_condition(3).constant
+  local version = parameters.conditions[3].constant
   if version > 1 then return false end
 
   -- Check always false condition is set up correctly
-  local false_condition = cb.get_condition(2)
+  local false_condition = parameters.conditions[2]
   if false_condition.comparator ~= "=" or (not false_condition.first_signal) or false_condition.first_signal.name ~= "signal-anything" then
     return false
   end
@@ -294,10 +297,13 @@ function ResearchAutomationCombinator:is_dirty()
   -- Get control behaviour
   --- @type LuaDeciderCombinatorControlBehavior
   local cb = self.entity.get_control_behavior()
-  if not cb or #cb.parameters.conditions ~= 8 then return true end
+  if not cb then return true end
+  --- @type DeciderCombinatorParameters
+  local parameters = cb.parameters
+  if not parameters or #parameters.conditions ~= 8 then return true end
 
   -- Check whether our unit_number matches the configured value (check only low 32 bits and hope that's good enough...)
-  local unit_check = cb.get_condition(8)
+  local unit_check = parameters.conditions[8]
   local unit = unit_check.constant or 0
   return bit32.band(self.entity.unit_number, 0xFFFFFFFF) ~= unit
 end
@@ -330,7 +336,6 @@ function ResearchAutomationCombinator:update_combinator()
 
   -- Second condition is the start of the storage area, and is always false (to prevent any other conditions from affecting the output)
   cb.set_condition(2, table.deepcopy(ALWAYS_FALSE_CONDITION))
-
   -- Third condition is a version number, which should always be the current version when storing to the combinator
   self.version = RAC_VERSION
   cb.set_condition(3, {
@@ -433,12 +438,12 @@ function ResearchAutomationCombinator:update_combinator()
   -- Clear states and remove progress signals if features are disabled
   self.cached_research_info = {}
   if not self.output_research_progress_percent then
-    self:remove_output(OUTPUT_SIGNAL_INDEX.RESEARCH_PERCENT)
+    self:remove_output(OUTPUT_SIGNAL_INDEX.RESEARCH_PERCENT, cb)
   end
   if not self.output_research_progress_value then
-    self:remove_output(OUTPUT_SIGNAL_INDEX.RESEARCH_CURRENT_VALUE)
-    self:remove_output(OUTPUT_SIGNAL_INDEX.RESEARCH_REMAINING_VALUE)
-    self:remove_output(OUTPUT_SIGNAL_INDEX.RESEARCH_TOTAL)
+    self:remove_output(OUTPUT_SIGNAL_INDEX.RESEARCH_CURRENT_VALUE, cb)
+    self:remove_output(OUTPUT_SIGNAL_INDEX.RESEARCH_REMAINING_VALUE, cb)
+    self:remove_output(OUTPUT_SIGNAL_INDEX.RESEARCH_TOTAL, cb)
   end
 
   -- Also call any handlers that need to be called when the combinator is updated
@@ -450,10 +455,11 @@ end
 function ResearchAutomationCombinator:configure_from_combinator()
   --- @type LuaDeciderCombinatorControlBehavior
   local cb = self.entity.get_control_behavior()
-  if not cb or #cb.parameters.conditions ~= 8 then return false end
+  --- @type DeciderCombinatorParameters
+  local parameters = cb.parameters
 
   -- Get the enabled conditions
-  local enabled_cond = cb.get_condition(4)
+  local enabled_cond = parameters.conditions[4]
   self.enabled_state = not (enabled_cond.first_signal_networks and (not enabled_cond.first_signal_networks.green))
   self.enabled_lhs = enabled_cond.first_signal
   self.enabled_rhs = enabled_cond.second_signal
@@ -461,7 +467,7 @@ function ResearchAutomationCombinator:configure_from_combinator()
   self.enabled_comparator = enabled_cond.comparator or "<"
 
   -- Get input conditions
-  local mask = cb.get_condition(5).constant or 0
+  local mask = parameters.conditions[5].constant or 0
   self.set_research_mode = bit32.band(mask, 0x03)
   self.get_research_prereq = bit32.band(mask, 0x04) ~= 0
   self.get_research_successors = bit32.band(mask, 0x08) ~= 0
@@ -475,26 +481,20 @@ function ResearchAutomationCombinator:configure_from_combinator()
   self.output_current_research = bit32.band(mask, 0x0400) ~= 0
 
   -- Read research (value)
-  local read_research_value_cond = cb.get_condition(6)
+  local read_research_value_cond = parameters.conditions[6]
   self.output_research_progress_value = read_research_value_cond.comparator == "="
   self.output_research_progress_value_csignal = read_research_value_cond.first_signal
   self.output_research_progress_value_tsignal = read_research_value_cond.second_signal
-  
+
   -- Read research (%)
-  local read_research_percent_cond = cb.get_condition(7)
+  local read_research_percent_cond = parameters.conditions[7]
   self.output_research_progress_percent = read_research_percent_cond.comparator == "="
   self.output_research_progress_percent_signal = read_research_percent_cond.first_signal
   self.output_research_progress_value_rsignal = read_research_percent_cond.second_signal
 
   -- Position 8 contains the unit number - we store this for dirty checks
   local low_unit_number = bit32.band(self.entity.unit_number, 0xFFFFFFFF)
-  if (#cb.parameters.conditions < 8) then
-    cb.add_condition({
-      compare_type = "and",
-      constant = low_unit_number,
-    })
-  end
-  local unit_check = cb.get_condition(8)
+  local unit_check = parameters.conditions[8]
   if (unit_check.constant ~= low_unit_number) then
     unit_check.constant = low_unit_number
     cb.set_condition(8, unit_check)
@@ -506,15 +506,18 @@ function ResearchAutomationCombinator:configure_from_combinator()
 
   -- Assume tick settings have changed
   self.tick_settings_changed = true
+
 end
 
 
 --- On tick handler for the research automation combinator.  Needs to be speedy, since it is called every tick.
 function ResearchAutomationCombinator:on_tick()
-  -- Do a check to see if we need to reconfigure the combinator (little choice but to do the check this
-  -- on every tick, as there is no event for placing a blueprint on top of an entity).
-  if (self:is_dirty()) then
-    self:configure_from_combinator()
+  -- Do a check to see if we need to reconfigure the combinator (little choice but to do this expensive check frequently,
+  -- as there is no event for placing a blueprint on top of an entity).
+  if (self.entity.unit_number + game.tick) % 60 == 0 then
+    if (self:is_dirty()) then
+      self:configure_from_combinator()
+    end
   end
 
   -- Do we have anything that even needs on_tick processing?
@@ -562,6 +565,14 @@ function ResearchAutomationCombinator:on_tick()
 
   --- @type LuaDeciderCombinatorControlBehavior
   local cb = self.entity.get_control_behavior()
+  local parameters = cb.parameters
+  if parameters == nil then
+    parameters = {
+      conditions = {},
+      outputs = {}
+    }
+    cb.parameters = parameters
+  end
 
   -- Process things that don't care about input signals first
   if (self.output_research_progress_percent and self.output_research_progress_percent_signal or
@@ -594,7 +605,7 @@ function ResearchAutomationCombinator:on_tick()
         local value = nil
         if (i == OUTPUT_SIGNAL_INDEX.RESEARCH_PERCENT) then
           value = math.floor(100 * progress)
-        elseif game.tick % 60 == 0 or self.cached_research_info[i] == nil then
+        elseif ((self.entity.unit_number + game.tick) % 60 == 0 or self.cached_research_info[i] == nil) then
           -- Calculate research from formula
           local formula = tech.research_unit_count_formula
           if (formula) then
@@ -618,7 +629,7 @@ function ResearchAutomationCombinator:on_tick()
 
           -- Get the existing output
           local current_index = self.indexes[i]
-          local current_output = current_index and cb.get_output(current_index) or nil
+          local current_output = current_index and parameters.outputs[current_index] or nil
 
           -- Build the output table
           local signal = i == OUTPUT_SIGNAL_INDEX.RESEARCH_PERCENT and self.output_research_progress_percent_signal or
@@ -766,7 +777,7 @@ function ResearchAutomationCombinator:on_tick()
 
   -- We have a list of signals to output, so we need to set them in the combinator.  Most are already set, so we will merge our list in with the existing ones.
   -- Removing existing empty output will make our life way easier
-  if (#cb.parameters.outputs == 1 and not cb.parameters.outputs[1].signal) then
+  if (#parameters.outputs == 1 and not parameters.outputs[1].signal) then
     cb.remove_output(1)
   end
 
@@ -785,9 +796,9 @@ function ResearchAutomationCombinator:on_tick()
             local insert = false
 
             --- @type DeciderCombinatorOutput
-            local current_output = cb.get_output(i)
+            local current_output = parameters.outputs[i]
 
-            if (i > #cb.parameters.outputs or (current_output.signal.type or "item") > signal_type) then
+            if (i > #parameters.outputs or (current_output.signal.type or "item") > signal_type) then
               -- Past all existing signals (of this type), so just need to add to end (or current position)
               insert = true
             else
@@ -844,7 +855,8 @@ function ResearchAutomationCombinator:on_tick()
     end
 
     --- Remove anything that is left over for this signal type
-    while (i <= #cb.parameters.outputs and cb.parameters.outputs[i].signal and cb.parameters.outputs[i].signal.type == signal_type) do
+    while (i <= #parameters.outputs and parameters.outputs[i].signal and parameters.outputs[i].signal.type == signal_type) do
+      table.remove(parameters.outputs, i)
       cb.remove_output(i)
     end
   end
@@ -915,6 +927,8 @@ function ResearchAutomationCombinator:remove_research_status_outputs(cb)
   --- Get control behavior if not provided
   --- @type LuaDeciderCombinatorControlBehavior
   cb = cb or self.entity.get_control_behavior()
+  local parameters = cb.parameters
+  if not parameters then return end
 
   -- Calculate how many outputs we're removing
   local start = self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_STATUS_START]
@@ -950,27 +964,37 @@ end
 --- @param event? EventData.on_research_finished|EventData.on_research_reversed|EventData.on_research_cancelled
 function ResearchAutomationCombinator:on_research_change(event)
   -- Remove existing research status outputs
-  self:remove_research_status_outputs(cb)
+  self:remove_research_status_outputs()
 
   if self.output_research_by_status ~= OUTPUT_RESEARCH_BY_STATUS.NONE then
     -- Make a list of all the tech that we need to output
     local techs = {}
-    for _, tech in pairs(game.forces.player.technologies) do
-      if (self.output_research_by_status == OUTPUT_RESEARCH_BY_STATUS.RESEARCHED and tech.researched or
-          self.output_research_by_status == OUTPUT_RESEARCH_BY_STATUS.UNRESEARCHED and not tech.researched
-      ) then
-        techs[#techs+1] = tech
-      elseif (self.output_research_by_status == OUTPUT_RESEARCH_BY_STATUS.AVAILABLE and not tech.researched) then
-        local available = true
-        for _, ptech in pairs(tech.prerequisites or {}) do
-          if not ptech.researched then
-            available = false
-            break
-          end
-        end
-
-        if available then
+    if (self.output_research_by_status == OUTPUT_RESEARCH_BY_STATUS.RESEARCHED) then
+      for _, tech in pairs(game.forces.player.technologies) do
+        if (tech.researched) then
           techs[#techs+1] = tech
+        end
+      end
+    elseif (self.output_research_by_status == OUTPUT_RESEARCH_BY_STATUS.UNRESEARCHED) then
+      for _, tech in pairs(game.forces.player.technologies) do
+        if (not tech.researched) then
+          techs[#techs+1] = tech
+        end
+      end
+    elseif (self.output_research_by_status == OUTPUT_RESEARCH_BY_STATUS.AVAILABLE) then
+      for _, tech in pairs(game.forces.player.technologies) do
+        if (not tech.researched) then
+          local available = true
+          for _, ptech in pairs(tech.prerequisites or {}) do
+            if not ptech.researched then
+              available = false
+              break
+            end
+          end
+
+          if available then
+            techs[#techs+1] = tech
+          end
         end
       end
     end
