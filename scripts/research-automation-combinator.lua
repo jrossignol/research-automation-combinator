@@ -584,15 +584,9 @@ function ResearchAutomationCombinator:on_tick()
   end
 
   --- @type LuaDeciderCombinatorControlBehavior
-  local cb = self:get_control_behavior()
-  local parameters = cb.parameters
-  if parameters == nil then
-    parameters = {
-      conditions = {},
-      outputs = {}
-    }
-    cb.parameters = parameters
-  end
+  local cb = nil
+  --- @type DeciderCombinatorParameters
+  local parameters = nil
 
   -- Process things that don't care about input signals first
   if (self.output_research_progress_percent and self.output_research_progress_percent_signal or
@@ -648,6 +642,8 @@ function ResearchAutomationCombinator:on_tick()
           self.cached_research_info[i] = value
 
           -- Get the existing output
+          cb = cb or self:get_control_behavior()
+          parameters = parameters or cb.parameters
           local current_index = self.indexes[i]
           local current_output = current_index and parameters.outputs[current_index] or nil
 
@@ -696,8 +692,8 @@ function ResearchAutomationCombinator:on_tick()
   else
     changed = true
   end
-  if not changed then return end
   self.tick_settings_changed = false
+  if not changed then return end
 
   -- Signals have changed, so now the goal will be to update the combinator in the simplest way possible.
   self.previous_signals = input_tech_signals
@@ -764,8 +760,9 @@ function ResearchAutomationCombinator:on_tick()
     if (self.get_research_recipes) then
       for _, recipe in ipairs(recipes_by_tech[tech_name] or {}) do
         local recipe_name = recipe.name
+        local value = self.io_mode == IO_MODE.INPUT_VALUE and s.count or 1
         output_signals["recipe"][recipe_name] = output_signals["recipe"][recipe_name] or {}
-        output_signals["recipe"][recipe_name][quality] = (output_signals["recipe"][recipe_name][quality] or 0) + s.count
+        output_signals["recipe"][recipe_name][quality] = (output_signals["recipe"][recipe_name][quality] or 0) + value
       end
     end
 
@@ -773,14 +770,16 @@ function ResearchAutomationCombinator:on_tick()
     if (self.get_research_items) then
       for _, item in ipairs(items_by_tech[tech_name] or {}) do
         local item_name = item.name
+        local value = self.io_mode == IO_MODE.INPUT_VALUE and s.count or 1
         output_signals["item"][item_name] = output_signals["item"][item_name] or {}
-        output_signals["item"][item_name][quality] = (output_signals["item"][item_name][quality] or 0) + s.count
+        output_signals["item"][item_name][quality] = (output_signals["item"][item_name][quality] or 0) + value
       end
 
       for _, fluid in ipairs(fluid_by_tech[tech_name] or {}) do
         local fluid_name = fluid.name
+        local value = self.io_mode == IO_MODE.INPUT_VALUE and s.count or 1
         output_signals["fluid"][fluid_name] = output_signals["fluid"][fluid_name] or {}
-        output_signals["fluid"][fluid_name][quality] = (output_signals["fluid"][fluid_name][quality] or 0) + s.count
+        output_signals["fluid"][fluid_name][quality] = (output_signals["fluid"][fluid_name][quality] or 0) + value
       end
     end
 
@@ -797,8 +796,10 @@ function ResearchAutomationCombinator:on_tick()
 
   -- We have a list of signals to output, so we need to set them in the combinator.  Most are already set, so we will merge our list in with the existing ones.
   -- Removing existing empty output will make our life way easier
+  cb = cb or self:get_control_behavior()
+  parameters = parameters or cb.parameters
   if (#parameters.outputs == 1 and not parameters.outputs[1].signal) then
-    cb.remove_output(1)
+    parameters.outputs = {}
   end
 
   -- Step through our lists in parallel.  We use a sorted iterator, because although Factorio guarantees *deterministic*
@@ -835,12 +836,11 @@ function ResearchAutomationCombinator:on_tick()
                   if ((current_output.constant or 1) ~= qarr[quality]) then
                     -- If the signal name and quality are the same, but the count is different, then we need to update it.
                     current_output.constant = qarr[quality]
-                    cb.set_output(i, current_output)
                   end
                   i = i + 1
                 elseif (current_quality < quality) then
                   -- Record should not longer exist, remove
-                  cb.remove_output(i)
+                  table.remove(parameters.outputs, i)
                   continue = true
                 else
                   -- Found insertion position
@@ -848,7 +848,7 @@ function ResearchAutomationCombinator:on_tick()
                 end
               elseif (current_name < signal_name) then
                 -- Record should not longer exist, remove
-                cb.remove_output(i)
+                table.remove(parameters.outputs, i)
                 continue = true
               else
                 -- Found insertion position
@@ -866,7 +866,7 @@ function ResearchAutomationCombinator:on_tick()
                 constant = qarr[quality],
                 copy_count_from_input = false,
               }
-              cb.add_output(output, i)
+              table.insert(parameters.outputs, i, output)
               i = i + 1
             end
           end
@@ -877,9 +877,16 @@ function ResearchAutomationCombinator:on_tick()
     --- Remove anything that is left over for this signal type
     while (i <= #parameters.outputs and parameters.outputs[i].signal and parameters.outputs[i].signal.type == signal_type) do
       table.remove(parameters.outputs, i)
-      cb.remove_output(i)
     end
   end
+
+  -- Remove any remaining outputs that were not part of our output_signals
+  while (i <= #parameters.outputs) do
+    table.remove(parameters.outputs, i)
+  end
+
+  -- Update the cb
+  cb.parameters = parameters
 end
 
 
@@ -1080,7 +1087,7 @@ function ResearchAutomationCombinator:on_research_queue_change(event)
             name = signal_name,
             quality = "normal",
           },
-          constant = 1,
+          constant = tech.level,
           copy_count_from_input = false,
         }
 
