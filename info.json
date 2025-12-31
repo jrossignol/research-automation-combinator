@@ -1,16 +1,16 @@
 {
   "name": "research-automation-combinator",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "title": "Research Automation Combinator",
   "author": "nightingale",
-  "description": "Test description",
+  "description": "An advanced combinator that can modify the research queue and output research-related signals based on input signals.",
   "factorio_version": "2.0",
   "dependencies": ["base >= 2.0.0", "?space-age"],
   "package": {
     "ignore": [
+      "gallery/*",
       "graphics/icons/*.xcf",
-      "graphics/entity/*.xcf",
-      "TODO.TXT"
+      "graphics/entity/*.xcf"
     ]
   }
 }
