@@ -21,21 +21,24 @@ local function signal_digit_icon(digit)
   }
 end
 
---- Helper function to generate all the icons for a tech signal
+--- Helper function to generate all the icons for a tech signal and add them to the signal.
+--- @param signal data.VirtualSignalPrototype The signal to add icons to
 --- @param tech data.TechnologyPrototype The technology to generate icons for.
 --- @param tech_basename string|nil The base name of the technology (without level), if applicable.
 --- @param level string|nil The level of the technology, if applicable.
---- @return data.IconData[] iconData The icons table for the signal.
-local function signal_icons(tech, tech_basename, level)
-  --- @type data.IconData[] The icons table to return.
-  local icons = {
-    -- Need to pull the initial icon either from the top of icons array or the icon field.
-    {
-      icon = tech.icon or tech.icons[1].icon,
-      icon_size = tech.icon_size or tech.icons[1].icon_size,
-      tint = tech.icons and tech.icons[1].tint
-    },
-  }
+local function add_signal_icons(signal, tech, tech_basename, level)
+  -- Pull the initial icon from the icon field if available
+  if (not tech.icons or #tech.icons == 0) then
+    signal.icons = {
+      {
+        icon = tech.icon,
+        icon_size = tech.icon_size,
+        tint = tech.icons
+      },
+    }
+  else
+    signal.icons = {}
+  end
 
   -- Handle techs with a more icons (infinite techs have a small sub-icon, or
   -- mods might use a tint layer).
@@ -54,21 +57,24 @@ local function signal_icons(tech, tech_basename, level)
     end
 
     -- Append into the icons
-    table.insert(icons, icon)
+    table.insert(signal.icons, icon)
   end
 
   -- Special handling for infinite techs
   if tech.max_level == "infinite" then
-    table.insert(icons, signal_digit_icon(tostring(tech.max_level)))
+    table.insert(signal.icons, signal_digit_icon(tostring(tech.max_level)))
   -- Add numeric identifier for techs with level, but which do not have a named
   -- tech without a level (this stops us from adding digits to the module techs)
   elseif level and tech.upgrade and not data.raw["technology"][tech_basename] then
     -- TODO: Need to properly handle values greater than 9.  For now, just use
     -- the infinite icon for those.
-    table.insert(icons, signal_digit_icon(tonumber(level) < 10 and level or "infinite"))
+    table.insert(signal.icons, signal_digit_icon(tonumber(level) < 10 and level or "infinite"))
   end
 
-  return icons
+  -- Set the signals's icon_size only if icons[1].icon_size is nil
+  if signal.icons[1] and not signal.icons[1].icon_size and tech.icon_size then
+    signal.icon_size = tech.icon_size
+  end
 end
 
 --- Helper function for creating a subgroup with the given name.  Extends data with the created subgroup.
@@ -143,6 +149,11 @@ local tech_tiers = {}
 --- @param tech data.TechnologyPrototype The technology to determine the tier for.
 --- @return number tier The tier of the associated tech.
 local function tech_tier(tech)
+  -- Not a real tech, return 0
+  if (tech == nil) then
+    return 0
+  end
+
   -- Check cache first
   if not tech_tiers[tech.name] then
     -- Determine the highest tier science pack required
@@ -192,14 +203,10 @@ local function create_tech_signal(tech)
   local signal = {
     type = "virtual-signal",
     name = "rac-technology-" .. tech.name,
-    icons = signal_icons(tech),
+    icons = {},
     techID = tech.name
   }
-
-  if tech.name == "textplates-concrete" then
-    log("[RAC] Creating signal for technology: " .. tech.name)
-    log(serpent.block(tech))
-  end
+  add_signal_icons(signal, tech)
 
   -- Need to remove the numbers from localised names.  While we're doing
   -- that, use different strings to build the names of infinite and non-infinite
@@ -209,7 +216,7 @@ local function create_tech_signal(tech)
     -- Reference localised names of technology for the signal names
     signal.localised_name = tech.localised_name or { "technology-name." .. tech.name }
     signal.localised_description = tech.localised_description or { "technology-description." .. tech.name }
-    signal.icons = signal_icons(tech)
+    add_signal_icons(signal, tech)
   else
     -- Use the form "<tech> <number>" or "<tech> <number>+" depending on whether
     -- the tech is infinite or just numbered.
@@ -221,7 +228,7 @@ local function create_tech_signal(tech)
     -- Need to reference the correctly localised string (without the extra digit)
     signal.localised_name = { tech_str, { "technology-name." .. tech_basename }, tech_level }
     signal.localised_description = { "technology-description." .. tech_basename }
-    signal.icons = signal_icons(tech, tech_basename, tech_level)
+    add_signal_icons(signal, tech, tech_basename, tech_level)
   end
 
   -- Determine the tier of this tech
