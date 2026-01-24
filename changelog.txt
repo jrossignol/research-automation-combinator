@@ -1,7 +1,7 @@
 ---------------------------------------------------------------------------------------------------
 Version: 1.0.1
 Date: 2025-01-24
-  Bug Fixes:
+  Bugfixes:
     - Fixed tech signal icon generation issues with Krastorio 2 Spaced Out (Thanks ExileFox and Terrulin)
 ---------------------------------------------------------------------------------------------------
 Version: 1.0.0
