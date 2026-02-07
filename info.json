@@ -1,6 +1,6 @@
 {
   "name": "research-automation-combinator",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "title": "Research Automation Combinator",
   "author": "nightingale",
   "description": "An advanced combinator that can modify the research queue and output research-related signals based on input signals.",
