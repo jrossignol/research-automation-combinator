@@ -7,3 +7,4 @@ local signal = require("prototypes.signal")
 
 signal.create_missing_signals()
 signal.remove_extra_signals()
+signal.fix_signal_icons()

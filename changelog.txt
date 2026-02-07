@@ -1,8 +1,14 @@
 ---------------------------------------------------------------------------------------------------
+Version: 1.0.2
+Date: 2025-02-07
+  Bugfixes:
+    - [Muluna] Fixed infinite loop from techs without a full definition until data-final-fixes (Thanks ExileFox)
+    - [Muluna] Fix for tech signals where the tech icon is added late (Thanks ExileFox)
+---------------------------------------------------------------------------------------------------
 Version: 1.0.1
 Date: 2025-01-24
   Bugfixes:
-    - Fixed tech signal icon generation issues with Krastorio 2 Spaced Out (Thanks ExileFox and Terrulin)
+    - [Krastorio 2 Spaced Out] Fixed tech signal icon generation issues (Thanks ExileFox and Terrulin)
 ---------------------------------------------------------------------------------------------------
 Version: 1.0.0
 Date: 2025-12-30

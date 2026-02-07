@@ -29,6 +29,10 @@ end
 local function add_signal_icons(signal, tech, tech_basename, level)
   -- Pull the initial icon from the icon field if available
   if (not tech.icons or #tech.icons == 0) then
+    if not tech.icon then
+      -- Tech has no icon, let fix_signal_icons handle it
+      return
+    end
     signal.icons = {
       {
         icon = tech.icon,
@@ -147,15 +151,27 @@ local tech_tiers = {}
 
 -- Helper function for determining the "tier" of a tech
 --- @param tech data.TechnologyPrototype The technology to determine the tier for.
+--- @param seen table|nil Map of visited techs to prevent infinite recursion
 --- @return number tier The tier of the associated tech.
-local function tech_tier(tech)
+local function tech_tier(tech, seen)
+  seen = seen or {}
+  
   -- Not a real tech, return 0
   if (tech == nil) then
     return 0
   end
 
+  -- Check if we've already visited this tech (cycle detection)
+  if seen[tech.name] then
+    log("[RAC] Cycle detected at tech: " .. tech.name)
+    return 999
+  end
+
   -- Check cache first
   if not tech_tiers[tech.name] then
+    -- Mark this tech as visited
+    seen[tech.name] = true
+
     -- Determine the highest tier science pack required
     local sci_tier = 0
     for _, ri in ipairs(tech.unit and tech.unit.ingredients or {}) do
@@ -166,8 +182,8 @@ local function tech_tier(tech)
     if sci_tier == 0 and tech.research_trigger then
       sci_tier = 999 -- Assume max tier
       for _, dtech in ipairs(tech_unlocks[tech.name] or {}) do
-        -- Recursion - Factorio won't allow a tech dependency loop...  right?
-        dtech_tier = tech_tier(data.raw.technology[dtech])
+        -- Recursion - We check for tech dependency loops here
+        dtech_tier = tech_tier(data.raw.technology[dtech], seen)
         -- Take the minimum of all the dependent techs' tiers
         sci_tier = sci_tier < dtech_tier and sci_tier or dtech_tier
       end
@@ -181,7 +197,7 @@ local function tech_tier(tech)
     -- assigning a value, or else this could become an infinite loop.
     if sci_tier == 999 then
       for _, ptech in ipairs(tech.prerequisites or {}) do
-        ptech_tier = tech_tier(data.raw.technology[ptech])
+        ptech_tier = tech_tier(data.raw.technology[ptech], seen)
         sci_tier = sci_tier < ptech_tier and sci_tier or ptech_tier
       end
 
@@ -198,6 +214,10 @@ end
 --- @param tech data.TechnologyPrototype The technology to create a signal for.
 --- @return data.VirtualSignalPrototype virtualSignal The signal for the associated tech.
 local function create_tech_signal(tech)
+
+  if tech.name == "muluna-aluminum-processing" then
+    log("Creating signal for " .. tech.name)
+  end
 
   --- @type data.VirtualSignalPrototype
   local signal = {
@@ -302,7 +322,7 @@ function signal_module.create_missing_signals()
   init_sci_tiers()
   init_tech_unlocks()
   init_missing_subgroups()
-  
+
   local missing_signals = {}
   local signal_count = 0
 
@@ -334,9 +354,9 @@ function signal_module.remove_extra_signals()
 
   for signal_name, signal in pairs(data.raw["virtual-signal"]) do
     -- Check if this is a RAC technology signal
-    if string.sub(signal_name, 1, 16) == "rac-technology-" then
+    if string.sub(signal_name, 1, 15) == "rac-technology-" then
       -- Extract the technology name
-      local tech_name = string.sub(signal_name, 17)
+      local tech_name = string.sub(signal_name, 16)
 
       -- Check if the corresponding technology exists
       if not data.raw.technology[tech_name] then
@@ -353,6 +373,39 @@ function signal_module.remove_extra_signals()
     end
   else
     log("[RAC] data-final-fixes: No orphaned signals to remove")
+  end
+end
+
+--- Fixes signals with missing or invalid icon information (called during data-final-fixes)
+function signal_module.fix_signal_icons()
+  local placeholder_icon = {
+    icon = "__base__/graphics/icons/signal/signal-science-pack.png",
+    icon_size = 256,
+  }
+
+  local fixed_count = 0
+
+  for signal_name, signal in pairs(data.raw["virtual-signal"]) do
+    -- Check if this is a RAC technology signal
+    if string.sub(signal_name, 1, 15) == "rac-technology-" then
+      -- Check if signal has missing or empty icons
+      if not signal.icons or #signal.icons == 0 then
+        local tech_name = string.sub(signal_name, 16)
+        local tech = data.raw.technology[tech_name]
+
+        if tech then
+          -- Try to regenerate icons from the technology
+          add_signal_icons(signal, tech)
+
+          -- If still missing icons, add placeholder
+          if not signal.icons or #signal.icons == 0 then
+            signal.icons = { placeholder_icon }
+            fixed_count = fixed_count + 1
+            log("[RAC] data-final-fixes: Added placeholder icon for signal: " .. signal_name)
+          end
+        end
+      end
+    end
   end
 end
 
