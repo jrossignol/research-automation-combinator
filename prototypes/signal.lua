@@ -260,7 +260,7 @@ local function create_tech_signal(tech)
     if mod.type == "unlock-recipe" then
       local recipe = data.raw.recipe[mod.recipe]
       if recipe then
-        for j, prod in ipairs(recipe.results) do
+        for j, prod in ipairs(recipe.results or {}) do
           if prod.type == "item" and sci_tiers[prod.name] then
             sci_tier = sci_tiers[prod.name]
             signal.order = "a"

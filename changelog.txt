@@ -4,6 +4,7 @@ Date: 2025-02-07
   Bugfixes:
     - [Muluna] Fixed infinite loop from techs without a full definition until data-final-fixes (Thanks ExileFox)
     - [Muluna] Fix for tech signals where the tech icon is added late (Thanks ExileFox)
+    - Fix potential crash when a technology unlocks no recipes (Thanks SkunkMaster)
 ---------------------------------------------------------------------------------------------------
 Version: 1.0.1
 Date: 2025-01-24
