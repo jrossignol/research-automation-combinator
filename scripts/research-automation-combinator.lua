@@ -797,7 +797,8 @@ function ResearchAutomationCombinator:on_tick()
   -- We have a list of signals to output, so we need to set them in the combinator.  Most are already set, so we will merge our list in with the existing ones.
   -- Removing existing empty output will make our life way easier
   cb = cb or self:get_control_behavior()
-  parameters = parameters or cb.parameters
+  -- Using the existing parameters value here doesn't work for some reason
+  parameters = cb.parameters
   if (#parameters.outputs == 1 and not parameters.outputs[1].signal) then
     parameters.outputs = {}
   end
