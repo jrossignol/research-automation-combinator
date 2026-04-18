@@ -743,6 +743,40 @@ function ResearchAutomationCombinator:on_tick()
   -- Signals have changed, so now the goal will be to update the combinator in the simplest way possible.
   self.previous_signals = input_tech_signals
 
+  local new_research_queue = {}
+  local research_queue_indices = {}
+  -- Replace research queue, using tech signals in ascending order of count
+  -- (tech with count 1 goes to the front of the queue, 2 is next, and so on)
+  if (self.set_research_mode == SET_RESEARCH_MODE.REPLACE_QUEUE) then
+    -- Sort signals by ascending count, keeping the order the same for equal counts
+    local augmented_tech_signals = table.deepcopy(input_tech_signals)
+    for i, s in ipairs(input_tech_signals) do
+      s.orig_index = i
+    end
+    local function compare_signals(a, b)
+      if a.count == b.count then
+        return a.orig_index < b.orig_index
+      else
+        return a.count < b.count
+      end
+    end
+    table.sort(augmented_tech_signals, compare_signals)
+    for _, s in ipairs(augmented_tech_signals) do
+      local tech_name = string.sub(s.signal.name or "", 16, -1)
+      table.insert(new_research_queue, tech_name)
+    end
+  elseif (self.set_research_mode ~= SET_RESEARCH_MODE.NONE) then
+    -- Build up current research queue, with technology names instead of LuaTechnology
+    for _, q_tech in ipairs(game.forces.player.research_queue) do
+      local i = #new_research_queue + 1
+      new_research_queue[i] = q_tech.name
+      -- only record the index for the first instance of a technology
+      if research_queue_indices[q_tech.name] == nil then
+        research_queue_indices[q_tech.name] = i
+      end
+    end
+  end
+
   -- Start by building the output list
   --- @type { [string]: { [string]: { [string]: integer } } }
   local output_signals = {
@@ -837,6 +871,37 @@ function ResearchAutomationCombinator:on_tick()
         output_signals["item"][item_name][quality] = (output_signals["item"][item_name][quality] or 0) + count
       end
     end
+
+    -- Add to front of research queue
+    if (self.set_research_mode == SET_RESEARCH_MODE.ADD_FRONT and research_queue_indices[1] ~= tech_name) then
+      -- Remove it from later in the research queue, if present
+      if (research_queue_indices[tech_name] ~= nil) then
+        local old_index = research_queue_indices[tech_name]
+        -- shift earlier indices up
+        for i = 1, old_index - 1 do
+          name = new_research_queue[i]
+          research_queue_indices[name] = i + 1
+        end
+        table.remove(new_research_queue, old_index)
+      end
+      table.insert(new_research_queue, 1, tech_name)
+      research_queue_indices[tech_name] = 1
+    end
+
+    -- Add to back of research queue
+    if (self.set_research_mode == SET_RESEARCH_MODE.ADD_BACK and new_research_queue[#new_research_queue] ~= tech_name) then
+      table.insert(new_research_queue, tech_name)
+      if research_queue_indices[tech_name] == nil then
+        research_queue_indices[tech_name] = #new_research_queue
+      end
+    end
+  end
+
+  -- Update research queue
+  if (self.set_research_mode ~= SET_RESEARCH_MODE.NONE and
+      not table.compare(game.forces.player.research_queue, new_research_queue)
+  ) then
+    game.forces.player.research_queue = new_research_queue
   end
 
   -- We have a list of signals to output, so we need to set them in the combinator.  Most are already set, so we will merge our list in with the existing ones.
