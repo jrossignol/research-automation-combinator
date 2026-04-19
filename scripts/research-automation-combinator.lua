@@ -30,6 +30,13 @@ SET_RESEARCH_MODE = {
   ADD_BACK = 3,
 }
 
+--- @enum OutputResearchMode
+OUTPUT_RESEARCH_MODE = {
+  NONE = 0,
+  CURRENT = 1,
+  QUEUE = 2,
+}
+
 --- @enum OutputResearchByStatus
 OUTPUT_RESEARCH_BY_STATUS = {
   NONE = 0,
@@ -55,6 +62,9 @@ local OUTPUT_SIGNAL_INDEX = {
   RESEARCH_STATUS_END = 7,
   -- Indicates the index of the start of the dynamic signals (ie. ouput signals that are dependent on input signals)
   FIRST_DYNAMIC = 8,
+  RESEARCH_QUEUE_START = 9,
+  RESEARCH_QUEUE_END = 10,
+  RESEARCH_QUEUE_SIZE = 11,
 }
 
 --- @type table<string, LuaRecipePrototype[]> A table of recipes by technology name.
@@ -233,7 +243,8 @@ end
 --- @field get_research_items boolean Indicates that we should return the items unlocked by the tech.
 --- @field get_research_science_packs boolean Indicates that we should return the science packs required by the tech.
 --- @field io_mode IOMode Indicates whether output values should be derived from input signals or context-based (0=input_value, 1=context).
---- @field output_current_research boolean Indicates we should output the current research.
+--- @field output_research_mode OutputResearchMode Indicates which output mode to use.
+--- @field output_research_queue_size_signal SignalID? The signal used for the research queue size.
 --- @field output_research_progress_percent boolean Indicates we should output the research progress as a percentage.
 --- @field output_research_progress_percent_signal SignalID? The signal used for the research progress percentage.
 --- @field output_research_progress_value boolean Indicates we should output the research progress as a value.
@@ -256,7 +267,11 @@ ResearchAutomationCombinator = {
   get_research_items = false,
   get_research_science_packs = false,
   io_mode = IO_MODE.INPUT_VALUE,
-  output_current_research = false,
+  output_research_mode = OUTPUT_RESEARCH_MODE.NONE,
+  output_research_queue_size_signal = {
+    name = "signal-number-sign",
+    type = "virtual",
+  },
   output_research_progress_percent = false,
   output_research_progress_percent_signal = {
     name = "signal-percent",
@@ -463,7 +478,11 @@ function ResearchAutomationCombinator:update_combinator()
   --         01: researched techs
   --         10: available techs
   --         11: unresearched techs
-  --     * Bit 11: Read current research
+  --     * Bit 11+12: Read research options:
+  --         00: disabled
+  --         01: current research
+  --         10: research queue
+  --   * The first_signal represents the research queue size signal
   --- @type uint32
   local mask = self.set_research_mode
 
@@ -488,13 +507,14 @@ function ResearchAutomationCombinator:update_combinator()
   if (self.output_research_by_status ~= OUTPUT_RESEARCH_BY_STATUS.NONE) then
     mask = bit32.bor(mask, bit32.lshift(self.output_research_by_status, 8))
   end
-  if (self.output_current_research) then
-    mask = bit32.bor(mask, 0x0400)
+  if (self.output_research_mode ~= OUTPUT_RESEARCH_MODE.NONE) then
+    mask = bit32.bor(mask, bit32.lshift(self.output_research_mode, 10))
   end
 
   cb.set_condition(5, {
     compare_type = "and",
     constant = mask,
+    first_signal = self.output_research_queue_size_signal,
   })
 
   -- Sixth condition is the Read Research Progress (value)
@@ -539,6 +559,9 @@ function ResearchAutomationCombinator:update_combinator()
     self:remove_output(OUTPUT_SIGNAL_INDEX.RESEARCH_REMAINING_VALUE, cb)
     self:remove_output(OUTPUT_SIGNAL_INDEX.RESEARCH_TOTAL, cb)
   end
+  if not self.output_research_mode == OUTPUT_RESEARCH_MODE.QUEUE then
+    self:remove_output(OUTPUT_SIGNAL_INDEX.RESEARCH_QUEUE_SIZE, cb)
+  end
 
   -- Also call any handlers that need to be called when the combinator is updated
   self:on_research_change(nil)
@@ -571,8 +594,9 @@ function ResearchAutomationCombinator:configure_from_combinator()
   self.io_mode = bit32.band(mask, 0x80) ~= 0 and 1 or 0
 
   -- Get output conditions
-  self.output_research_by_status = bit32.rshift(bit32.band(mask, 0x0300), 8)
-  self.output_current_research = bit32.band(mask, 0x0400) ~= 0
+  self.output_research_by_status = bit32.band(bit32.rshift(mask, 8), 0x03)
+  self.output_research_mode = bit32.band(bit32.rshift(mask, 10), 0x03)
+  self.output_research_queue_size_signal = parameters.conditions[5].first_signal
 
   -- Read research (value)
   local read_research_value_cond = parameters.conditions[6]
@@ -748,29 +772,23 @@ function ResearchAutomationCombinator:on_tick()
 
   local new_research_queue = {}
   local research_queue_indices = {}
-  -- Replace research queue, using tech signals in ascending order of count
-  -- (tech with count 1 goes to the front of the queue, 2 is next, and so on)
   if (self.set_research_mode == SET_RESEARCH_MODE.REPLACE_QUEUE) then
-    -- Sort signals by ascending count, keeping the order the same for equal counts
-    local augmented_tech_signals = table.deepcopy(input_tech_signals)
-    for i, s in ipairs(input_tech_signals) do
-      s.orig_index = i
-    end
-    local function compare_signals(a, b)
-      if a.count == b.count then
-        return a.orig_index < b.orig_index
-      else
-        return a.count < b.count
+    -- Replace research queue, using bitmask ordering
+    for i = 0, 6 do
+      local tech_name = nil
+      for _, s in ipairs(input_tech_signals) do
+        if bit32.extract(s.count, i) ~= 0 then
+          tech_name = string.sub(s.signal.name or "", 16, -1)
+          break
+        end
       end
-    end
-    table.sort(augmented_tech_signals, compare_signals)
-    for _, s in ipairs(augmented_tech_signals) do
-      local tech_name = string.sub(s.signal.name or "", 16, -1)
-      table.insert(new_research_queue, tech_name)
+      if tech_name ~= nil then
+        table.insert(new_research_queue, tech_name)
+      end
     end
   elseif (self.set_research_mode ~= SET_RESEARCH_MODE.NONE) then
     -- Build up current research queue, with technology names instead of LuaTechnology
-    for _, q_tech in ipairs(game.forces.player.research_queue) do
+    for _, q_tech in ipairs(self.entity.force.research_queue) do
       local i = #new_research_queue + 1
       new_research_queue[i] = q_tech.name
       -- only record the index for the first instance of a technology
@@ -902,9 +920,9 @@ function ResearchAutomationCombinator:on_tick()
 
   -- Update research queue
   if (self.set_research_mode ~= SET_RESEARCH_MODE.NONE and
-      not table.compare(game.forces.player.research_queue, new_research_queue)
+      not table.compare(self.entity.force.research_queue, new_research_queue)
   ) then
-    game.forces.player.research_queue = new_research_queue
+    self.entity.force.research_queue = new_research_queue
   end
 
   -- We have a list of signals to output, so we need to set them in the combinator.  Most are already set, so we will merge our list in with the existing ones.
@@ -1052,7 +1070,10 @@ function ResearchAutomationCombinator:remove_output(name, cb)
   -- Decrement the remaining indexes that were above the removed index
   for _, i in pairs(OUTPUT_SIGNAL_INDEX) do
     if (self.indexes[i]) then
-      if (self.indexes[i] == index and i ~= OUTPUT_SIGNAL_INDEX.RESEARCH_STATUS_START) then
+      if (self.indexes[i] == index and
+          i ~= OUTPUT_SIGNAL_INDEX.RESEARCH_STATUS_START and
+          i ~= OUTPUT_SIGNAL_INDEX.RESEARCH_QUEUE_START
+      ) then
         self.indexes[i] = nil
       elseif (self.indexes[i] > index) then
         self.indexes[i] = self.indexes[i] - 1
@@ -1067,6 +1088,15 @@ function ResearchAutomationCombinator:remove_output(name, cb)
   ) then
     self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_STATUS_START] = nil
     self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_STATUS_END] = nil
+  end
+
+  -- If we removed the last research queue signal, clear it out
+  if (self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_QUEUE_START] and
+      self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_QUEUE_END] and
+      self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_QUEUE_END] < self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_QUEUE_START]
+  ) then
+    self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_QUEUE_START] = nil
+    self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_QUEUE_END] = nil
   end
 end
 
@@ -1125,6 +1155,63 @@ function ResearchAutomationCombinator:remove_research_status_outputs(cb)
   self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_STATUS_END] = nil
 end
 
+--- Removes all research queue outputs from the combinator and updates indexes accordingly.
+--- @param cb LuaDeciderCombinatorControlBehavior? The control behavior of the combinator.
+function ResearchAutomationCombinator:remove_research_queue_outputs(cb)
+  -- If there are no research queue outputs, nothing to do
+  if not self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_QUEUE_START] then return end
+
+  --- Get control behavior if not provided
+  --- @type LuaDeciderCombinatorControlBehavior
+  cb = cb or self:get_control_behavior()
+  local parameters = cb.parameters
+  if not parameters or not parameters.outputs then return end
+
+  -- Calculate how many outputs we're removing
+  local start = self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_QUEUE_START]
+  local end_idx = self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_QUEUE_END]
+
+  -- Validate that the indices are within valid range
+  local output_count = #parameters.outputs
+  if not start or not end_idx or start > output_count or end_idx > output_count or start < 1 or end_idx < 1 then
+    -- Invalid range, just clear the tracking
+    self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_QUEUE_START] = nil
+    self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_QUEUE_END] = nil
+    return
+  end
+
+  local count = end_idx - start + 1
+
+  -- Remove the outputs in reverse order
+  for i = end_idx, start, -1 do
+    -- Double-check the index is valid before removing
+    if i <= #cb.parameters.outputs and i >= 1 then
+      cb.remove_output(i)
+    end
+  end
+
+  -- Update all indexes that were after the removed section
+  for _, i in pairs(OUTPUT_SIGNAL_INDEX) do
+    if self.indexes[i] then
+      if self.indexes[i] >= start and self.indexes[i] <= end_idx then
+        -- This index was in the removed range
+        if i ~= OUTPUT_SIGNAL_INDEX.RESEARCH_QUEUE_START then
+          self.indexes[i] = nil
+        end
+      elseif self.indexes[i] > end_idx then
+        -- This index was after the removed range, decrease by the number of items removed
+        self.indexes[i] = self.indexes[i] - count
+      end
+    end
+  end
+
+  -- Clear the research queue range
+  self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_QUEUE_START] = nil
+  self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_QUEUE_END] = nil
+
+  -- Clear the research queue size signal
+  self:remove_output(OUTPUT_SIGNAL_INDEX.RESEARCH_QUEUE_SIZE, cb)
+end
 
 --- Validates and repairs the index tracking to ensure it's in sync with actual combinator outputs.
 --- This is called when we detect an index out of bounds error.
@@ -1253,11 +1340,14 @@ function ResearchAutomationCombinator:on_research_change(event)
   end
 end
 
---- Handler for any change to the research queue (starting, finishing, cancelling, and moving research).
---- @param event? EventData.on_research_finished|EventData.on_research_started|EventData.on_research_cancelled|EventData.on_research_moved
+--- Handler for any change to the research queue (starting, finishing, cancelling, queueing, and moving research).
+--- @param event? EventData.on_research_finished|EventData.on_research_started|EventData.on_research_cancelled|EventData.on_research_queued|EventData.on_research_moved
 function ResearchAutomationCombinator:on_research_queue_change(event)
-  local clear_research = false
-  if self.output_current_research then
+  -- Remove existing research queue outputs
+  self:remove_research_queue_outputs()
+
+  local clear_current_research = false
+  if (self.output_research_mode == OUTPUT_RESEARCH_MODE.CURRENT) then
     local tech = self.entity.force.current_research
     if tech then
       local signal_name = "rac-technology-" .. tech.name
@@ -1302,17 +1392,62 @@ function ResearchAutomationCombinator:on_research_queue_change(event)
         end
       else
         -- Signal doesn't exist, clear the output if it was set
-        clear_research = true
+        clear_current_research = true
       end
     -- No current research, so remove the output if it exists
     else
-      clear_research = true
+      clear_current_research = true
     end
   else
-    clear_research = true
+    clear_current_research = true
   end
 
-  if clear_research then
+  if clear_current_research then
     self:remove_output(OUTPUT_SIGNAL_INDEX.RESEARCH_CURRENT)
+  end
+
+  if (self.output_research_mode == OUTPUT_RESEARCH_MODE.QUEUE) then
+    local queue = self.entity.force.research_queue
+    if #queue > 0 then
+      local cb = self:get_control_behavior()
+      -- Add the research queue size signal
+      local output = {
+        signal = self.output_research_queue_size_signal,
+        constant = #queue,
+        copy_count_from_input = false,
+      }
+      self:add_output(OUTPUT_SIGNAL_INDEX.RESEARCH_QUEUE_SIZE, output, cb)
+
+      local start_idx = self.indexes[OUTPUT_SIGNAL_INDEX.FIRST_DYNAMIC] or 1
+      self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_QUEUE_START] = start_idx
+      local i = start_idx
+
+      for queue_idx, tech in ipairs(queue) do
+        -- Check if the virtual signal exists (it may not if a mod was removed)
+        local signal_name = "rac-technology-" .. tech.name
+        if prototypes.virtual_signal[signal_name] then
+          local output = {
+            signal = {
+              type = "virtual",
+              name = signal_name,
+              quality = "normal",
+            },
+            constant = bit32.lshift(1, queue_idx - 1),
+            copy_count_from_input = false,
+          }
+          cb.add_output(output, i)
+          i = i + 1
+        end
+      end
+
+      -- Set the end indexes based on what researches were actually added
+      if i > start_idx then
+        self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_QUEUE_END] = i - 1
+        self.indexes[OUTPUT_SIGNAL_INDEX.FIRST_DYNAMIC] = i
+      -- Nothing was inserted
+      else
+        self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_QUEUE_START] = nil
+      end
+    end
   end
 end
