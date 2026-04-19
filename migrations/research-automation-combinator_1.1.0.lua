@@ -9,3 +9,7 @@ if storage.research_combinators then
     end
   end
 end
+
+if not storage.research_queue_last_modified then
+  storage.research_queue_last_modified = 0
+end

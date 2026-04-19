@@ -6,12 +6,13 @@ require("scripts.gui")
 
 script.on_load(function()
   register_picker_dollies()
-  init_rac_data()
+  load_rac_data()
 end)
 
 script.on_init(function()
   register_picker_dollies()
   init_rac_data()
+  load_rac_data()
 end)
 
 script.on_configuration_changed(function()
@@ -47,6 +48,7 @@ end
 --- Handler for any change to the research queue (starting, finishing, cancelling, queueing, and moving research).
 --- @param event EventData.on_research_finished|EventData.on_research_started|EventData.on_research_cancelled|EventData.on_research_queued|EventData.on_research_moved
 function on_research_queue_change(event)
+  storage.research_queue_last_modified = game.tick
   for _, rac in pairs(storage.research_combinators or {}) do
     if rac.entity and rac.entity.valid then
       rac:on_research_queue_change(event)
