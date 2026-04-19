@@ -22,6 +22,8 @@ local ALWAYS_FALSE_CONDITION = {
   },
 }
 
+local RESEARCH_QUEUE_COOLDOWN_SETTING = "research-automation-combinator-research-queue-cooldown"
+
 --- @enum SetResearchMode
 SET_RESEARCH_MODE = {
   NONE = 0,
@@ -91,6 +93,9 @@ function init_rac_data()
   -- Initialize storage tables for the research automation combinators
   --- @type table<integer, ResearchAutomationCombinator>
   storage.research_combinators = storage.research_combinators or {}
+
+  -- Initialize the last modified tick for the research queue cooldown.
+  storage.research_queue_last_modified = storage.research_queue_last_modified or 0
 end
 
 --- Initialize local data and set up metatables.  Called from `on_load()`.
@@ -774,16 +779,23 @@ function ResearchAutomationCombinator:on_tick()
   local research_queue_indices = {}
   if (self.set_research_mode == SET_RESEARCH_MODE.REPLACE_QUEUE) then
     -- Replace research queue, using bitmask ordering
-    for i = 0, 6 do
-      local tech_name = nil
-      for _, s in ipairs(input_tech_signals) do
-        if bit32.extract(s.count, i) ~= 0 then
-          tech_name = string.sub(s.signal.name or "", 16, -1)
-          break
+    if game.tick - storage.research_queue_last_modified < settings.global[RESEARCH_QUEUE_COOLDOWN_SETTING].value then
+      -- Don't modify the research queue
+      new_research_queue = nil
+      -- Force the inputs to be rechecked next tick
+      self.tick_settings_changed = true
+    else
+      for i = 0, 6 do
+        local tech_name = nil
+        for _, s in ipairs(input_tech_signals) do
+          if bit32.extract(s.count, i) ~= 0 then
+            tech_name = string.sub(s.signal.name or "", 16, -1)
+            break
+          end
         end
-      end
-      if tech_name ~= nil then
-        table.insert(new_research_queue, tech_name)
+        if tech_name ~= nil then
+          table.insert(new_research_queue, tech_name)
+        end
       end
     end
   elseif (self.set_research_mode ~= SET_RESEARCH_MODE.NONE) then
@@ -920,6 +932,7 @@ function ResearchAutomationCombinator:on_tick()
 
   -- Update research queue
   if (self.set_research_mode ~= SET_RESEARCH_MODE.NONE and
+      new_research_queue ~= nil and
       not table.compare(self.entity.force.research_queue, new_research_queue)
   ) then
     self.entity.force.research_queue = new_research_queue
