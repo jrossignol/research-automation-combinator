@@ -585,8 +585,6 @@ function ResearchAutomationCombinator:on_tick()
 
   --- @type LuaDeciderCombinatorControlBehavior
   local cb = nil
-  --- @type DeciderCombinatorParameters
-  local parameters = nil
 
   -- Process things that don't care about input signals first
   if (self.output_research_progress_percent and self.output_research_progress_percent_signal or
@@ -643,9 +641,8 @@ function ResearchAutomationCombinator:on_tick()
 
           -- Get the existing output
           cb = cb or self:get_control_behavior()
-          parameters = parameters or cb.parameters
           local current_index = self.indexes[i]
-          local current_output = current_index and parameters.outputs[current_index] or nil
+          local current_output = current_index and cb.parameters.outputs[current_index] or nil
 
           -- Build the output table
           local signal = i == OUTPUT_SIGNAL_INDEX.RESEARCH_PERCENT and self.output_research_progress_percent_signal or
@@ -797,9 +794,8 @@ function ResearchAutomationCombinator:on_tick()
   -- We have a list of signals to output, so we need to set them in the combinator.  Most are already set, so we will merge our list in with the existing ones.
   -- Removing existing empty output will make our life way easier
   cb = cb or self:get_control_behavior()
-  parameters = parameters or cb.parameters
-  if (#parameters.outputs == 1 and not parameters.outputs[1].signal) then
-    parameters.outputs = {}
+  if (#cb.parameters.outputs == 1 and not cb.parameters.outputs[1].signal) then
+    cb.parameters.outputs = {}
   end
 
   -- Step through our lists in parallel.  We use a sorted iterator, because although Factorio guarantees *deterministic*
@@ -817,9 +813,9 @@ function ResearchAutomationCombinator:on_tick()
             local insert = false
 
             --- @type DeciderCombinatorOutput
-            local current_output = parameters.outputs[i]
+            local current_output = cb.parameters.outputs[i]
 
-            if (i > #parameters.outputs or (current_output.signal.type or "item") > signal_type) then
+            if (i > #cb.parameters.outputs or (current_output.signal.type or "item") > signal_type) then
               -- Past all existing signals (of this type), so just need to add to end (or current position)
               insert = true
             else
@@ -840,7 +836,7 @@ function ResearchAutomationCombinator:on_tick()
                   i = i + 1
                 elseif (current_quality < quality) then
                   -- Record should not longer exist, remove
-                  table.remove(parameters.outputs, i)
+                  table.remove(cb.parameters.outputs, i)
                   continue = true
                 else
                   -- Found insertion position
@@ -848,7 +844,7 @@ function ResearchAutomationCombinator:on_tick()
                 end
               elseif (current_name < signal_name) then
                 -- Record should not longer exist, remove
-                table.remove(parameters.outputs, i)
+                table.remove(cb.parameters.outputs, i)
                 continue = true
               else
                 -- Found insertion position
@@ -866,7 +862,7 @@ function ResearchAutomationCombinator:on_tick()
                 constant = qarr[quality],
                 copy_count_from_input = false,
               }
-              table.insert(parameters.outputs, i, output)
+              table.insert(cb.parameters.outputs, i, output)
               i = i + 1
             end
           end
@@ -875,18 +871,15 @@ function ResearchAutomationCombinator:on_tick()
     end
 
     --- Remove anything that is left over for this signal type
-    while (i <= #parameters.outputs and parameters.outputs[i].signal and parameters.outputs[i].signal.type == signal_type) do
-      table.remove(parameters.outputs, i)
+    while (i <= #cb.parameters.outputs and cb.parameters.outputs[i].signal and cb.parameters.outputs[i].signal.type == signal_type) do
+      table.remove(cb.parameters.outputs, i)
     end
   end
 
   -- Remove any remaining outputs that were not part of our output_signals
-  while (i <= #parameters.outputs) do
-    table.remove(parameters.outputs, i)
+  while (i <= #cb.parameters.outputs) do
+    table.remove(cb.parameters.outputs, i)
   end
-
-  -- Update the cb
-  cb.parameters = parameters
 
   -- Update NEXT_FREE to point to the correct position after all our manipulations.
   -- This is all we need to maintain since the loop variable 'i' tracked the correct insertion point.
@@ -921,6 +914,7 @@ function ResearchAutomationCombinator:remove_output(name, cb)
   -- Get the index to remove
   local index = self.indexes[name]
   if not index then return end
+  self.indexes[name] = nil
 
   --- Remove from the combinator
   --- @type LuaDeciderCombinatorControlBehavior
@@ -929,8 +923,9 @@ function ResearchAutomationCombinator:remove_output(name, cb)
   -- Validate that the index is within the valid range of outputs
   local parameters = cb.parameters
   if not parameters or not parameters.outputs or index > #parameters.outputs or index < 1 then
-    -- Index is out of bounds, clear it from our tracking
+    -- Index is out of bounds, clear it from our tracking and repair stale indexes.
     self.indexes[name] = nil
+    self:repair_indexes(cb)
     return
   end
 
@@ -954,6 +949,11 @@ function ResearchAutomationCombinator:remove_output(name, cb)
   ) then
     self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_STATUS_START] = nil
     self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_STATUS_END] = nil
+  end
+
+  -- Ensure NEXT_FREE is still valid after removing an output.
+  if not self.indexes[OUTPUT_SIGNAL_INDEX.NEXT_FREE] or self.indexes[OUTPUT_SIGNAL_INDEX.NEXT_FREE] < 1 or self.indexes[OUTPUT_SIGNAL_INDEX.NEXT_FREE] > #parameters.outputs + 1 then
+    self.indexes[OUTPUT_SIGNAL_INDEX.NEXT_FREE] = #parameters.outputs + 1
   end
 end
 
