@@ -887,8 +887,11 @@ function ResearchAutomationCombinator:on_tick()
 
   -- Update the cb
   cb.parameters = parameters
-end
 
+  -- Update NEXT_FREE to point to the correct position after all our manipulations.
+  -- This is all we need to maintain since the loop variable 'i' tracked the correct insertion point.
+  self.indexes[OUTPUT_SIGNAL_INDEX.NEXT_FREE] = i
+end
 
 --- Adds an output signal to the combinator and keeps the signal list up to date.
 --- @param name OutputSignalIndex The name of the index to add.
@@ -922,6 +925,15 @@ function ResearchAutomationCombinator:remove_output(name, cb)
   --- Remove from the combinator
   --- @type LuaDeciderCombinatorControlBehavior
   cb = cb or self:get_control_behavior()
+
+  -- Validate that the index is within the valid range of outputs
+  local parameters = cb.parameters
+  if not parameters or not parameters.outputs or index > #parameters.outputs or index < 1 then
+    -- Index is out of bounds, clear it from our tracking
+    self.indexes[name] = nil
+    return
+  end
+
   cb.remove_output(index)
 
   -- Decrement the remaining indexes that were above the removed index
@@ -955,16 +967,29 @@ function ResearchAutomationCombinator:remove_research_status_outputs(cb)
   --- @type LuaDeciderCombinatorControlBehavior
   cb = cb or self:get_control_behavior()
   local parameters = cb.parameters
-  if not parameters then return end
+  if not parameters or not parameters.outputs then return end
 
   -- Calculate how many outputs we're removing
   local start = self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_STATUS_START]
   local end_idx = self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_STATUS_END]
+
+  -- Validate that the indices are within valid range
+  local output_count = #parameters.outputs
+  if not start or not end_idx or start > output_count or end_idx > output_count or start < 1 or end_idx < 1 then
+    -- Invalid range, just clear the tracking
+    self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_STATUS_START] = nil
+    self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_STATUS_END] = nil
+    return
+  end
+
   local count = end_idx - start + 1
 
   -- Remove the outputs in reverse order
   for i = end_idx, start, -1 do
-    cb.remove_output(i)
+    -- Double-check the index is valid before removing
+    if i <= #cb.parameters.outputs and i >= 1 then
+      cb.remove_output(i)
+    end
   end
 
   -- Update all indexes that were after the removed section
@@ -987,9 +1012,59 @@ function ResearchAutomationCombinator:remove_research_status_outputs(cb)
   self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_STATUS_END] = nil
 end
 
+
+--- Validates and repairs the index tracking to ensure it's in sync with actual combinator outputs.
+--- This is called when we detect an index out of bounds error.
+--- @param cb LuaDeciderCombinatorControlBehavior? The control behavior of the combinator.
+function ResearchAutomationCombinator:repair_indexes(cb)
+  --- @type LuaDeciderCombinatorControlBehavior
+  cb = cb or self:get_control_behavior()
+  local parameters = cb.parameters
+  if not parameters or not parameters.outputs then
+    -- No outputs, reset everything
+    self.indexes = {
+      [OUTPUT_SIGNAL_INDEX.NEXT_FREE] = 1,
+    }
+    return
+  end
+
+  -- Build a new indexes table based on the actual outputs
+  local actual_output_count = #parameters.outputs
+
+  -- Remove any indexes that point beyond the actual output count
+  for key, index in pairs(self.indexes) do
+    if index > actual_output_count or index < 1 then
+      self.indexes[key] = nil
+    end
+  end
+
+  -- Update the NEXT_FREE index to be after the highest indexed output
+  local max_index = 0
+  for key, index in pairs(self.indexes) do
+    if key ~= OUTPUT_SIGNAL_INDEX.NEXT_FREE and index > max_index then
+      max_index = index
+    end
+  end
+
+  self.indexes[OUTPUT_SIGNAL_INDEX.NEXT_FREE] = max_index + 1
+end
+
 --- Handler for any change to research (finishing, cancelling, reversing).
 --- @param event? EventData.on_research_finished|EventData.on_research_reversed|EventData.on_research_cancelled
 function ResearchAutomationCombinator:on_research_change(event)
+  -- Validate that our indexes are still in sync before attempting to remove outputs.
+  -- This is important because on_tick() directly manipulates parameters.outputs,
+  -- and this event could be triggered between on_tick() calls.
+  if self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_STATUS_START] then
+    local cb = self:get_control_behavior()
+    local parameters = cb.parameters
+    local start_idx = self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_STATUS_START]
+    if not parameters or not parameters.outputs or start_idx > #parameters.outputs then
+      -- Indexes are invalid, repair them
+      self:repair_indexes(cb)
+    end
+  end
+
   -- Remove existing research status outputs
   self:remove_research_status_outputs()
 
@@ -1074,6 +1149,15 @@ function ResearchAutomationCombinator:on_research_queue_change(event)
 
       -- Check if the output already exists and is correct
       local current_index = self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_CURRENT]
+
+      -- Validate the index before trying to use it
+      local parameters = cb.parameters
+      if current_index and (not parameters or not parameters.outputs or current_index > #parameters.outputs or current_index < 1) then
+        -- Index is invalid, repair before proceeding
+        self:repair_indexes(cb)
+        current_index = self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_CURRENT]
+      end
+
       local current_output = current_index and cb.get_output(current_index) or nil
       if current_output and current_output.signal and current_output.signal.name == signal_name then
         return
