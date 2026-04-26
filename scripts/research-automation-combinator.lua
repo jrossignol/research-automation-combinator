@@ -886,10 +886,6 @@ function ResearchAutomationCombinator:on_tick()
 
   -- Update the cb
   cb.parameters = parameters
-
-  -- Update NEXT_FREE to point to the correct position after all our manipulations.
-  -- This is all we need to maintain since the loop variable 'i' tracked the correct insertion point.
-  self.indexes[OUTPUT_SIGNAL_INDEX.NEXT_FREE] = i
 end
 
 --- Adds an output signal to the combinator and keeps the signal list up to date.
@@ -1135,7 +1131,7 @@ function ResearchAutomationCombinator:on_research_change(event)
         end
       end
 
-      self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_STATUS_END] = start_idx + #techs - 1
+      self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_STATUS_END] = i - 1
       self.indexes[OUTPUT_SIGNAL_INDEX.NEXT_FREE] = self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_STATUS_END] + 1
     end
   end
