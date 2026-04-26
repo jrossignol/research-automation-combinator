@@ -886,10 +886,6 @@ function ResearchAutomationCombinator:on_tick()
 
   -- Update the cb
   cb.parameters = parameters
-
-  -- Update NEXT_FREE to point to the correct position after all our manipulations.
-  -- This is all we need to maintain since the loop variable 'i' tracked the correct insertion point.
-  self.indexes[OUTPUT_SIGNAL_INDEX.NEXT_FREE] = i
 end
 
 --- Adds an output signal to the combinator and keeps the signal list up to date.
