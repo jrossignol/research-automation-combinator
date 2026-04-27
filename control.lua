@@ -14,6 +14,17 @@ script.on_init(function()
   init_rac_data()
 end)
 
+script.on_configuration_changed(function()
+    -- Re-derive indexes from combinator settings for all existing combinators
+    for _, rac in pairs(storage.research_combinators or {}) do
+      if rac.entity and rac.entity.valid then
+        rac:repair_indexes()
+        rac:update_combinator()
+        rac.tick_settings_changed = true
+      end
+    end
+end)
+
 --- On tick handler for the research automation combinator.
 function on_tick()
   for _, rac in pairs(storage.research_combinators or {}) do

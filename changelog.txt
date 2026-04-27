@@ -1,4 +1,10 @@
 ---------------------------------------------------------------------------------------------------
+Version: 1.0.4
+Date: 2025-04-26
+  Bugfixes:
+    - Fixed more issues with combinators outputting incorrect data (Thanks yut23)
+	- Added on_configuration_changed handler to clean up data when mod list changes
+---------------------------------------------------------------------------------------------------
 Version: 1.0.3
 Date: 2025-04-25
   Bugfixes:

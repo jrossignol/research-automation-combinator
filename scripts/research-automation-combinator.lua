@@ -53,7 +53,8 @@ local OUTPUT_SIGNAL_INDEX = {
   RESEARCH_TOTAL = 5,
   RESEARCH_STATUS_START = 6,
   RESEARCH_STATUS_END = 7,
-  NEXT_FREE = 8,
+  -- Indicates the index of the start of the dynamic signals (ie. ouput signals that are dependent on input signals)
+  FIRST_DYNAMIC = 8,
 }
 
 --- @type table<string, LuaRecipePrototype[]> A table of recipes by technology name.
@@ -205,7 +206,7 @@ function ResearchAutomationCombinator:new(entity)
     entity = entity,
     cb = entity.get_control_behavior(),
     indexes = {
-      [OUTPUT_SIGNAL_INDEX.NEXT_FREE] = 1,
+      [OUTPUT_SIGNAL_INDEX.FIRST_DYNAMIC] = 1,
     },
   }
 
@@ -517,7 +518,7 @@ function ResearchAutomationCombinator:configure_from_combinator()
     cb.remove_output(i)
   end
   self.indexes = {
-    [OUTPUT_SIGNAL_INDEX.NEXT_FREE] = 1,
+    [OUTPUT_SIGNAL_INDEX.FIRST_DYNAMIC] = 1,
   }
   self.cached_research_info = {}
 
@@ -585,8 +586,6 @@ function ResearchAutomationCombinator:on_tick()
 
   --- @type LuaDeciderCombinatorControlBehavior
   local cb = nil
-  --- @type DeciderCombinatorParameters
-  local parameters = nil
 
   -- Process things that don't care about input signals first
   if (self.output_research_progress_percent and self.output_research_progress_percent_signal or
@@ -796,15 +795,18 @@ function ResearchAutomationCombinator:on_tick()
   -- We have a list of signals to output, so we need to set them in the combinator.  Most are already set, so we will merge our list in with the existing ones.
   -- Removing existing empty output will make our life way easier
   cb = cb or self:get_control_behavior()
-  parameters = parameters or cb.parameters
-  if (#parameters.outputs == 1 and not parameters.outputs[1].signal) then
-    parameters.outputs = {}
+
+  --- @type DeciderCombinatorParameters
+  local parameters_copy = cb.parameters
+
+  if (#parameters_copy.outputs == 1 and not parameters_copy.outputs[1].signal) then
+    parameters_copy.outputs = {}
   end
 
   -- Step through our lists in parallel.  We use a sorted iterator, because although Factorio guarantees *deterministic*
   -- ordering of keys, it does not guarantee *sorted* ordering of keys.  We make the assumption that the overhead added by
   -- sorting the output signals is less significant than what we save from having to constantly rebuild the combinator output.
-  local i = self.indexes[OUTPUT_SIGNAL_INDEX.NEXT_FREE] or 1
+  local i = self.indexes[OUTPUT_SIGNAL_INDEX.FIRST_DYNAMIC] or 1
   for _, signal_type in ipairs({"fluid", "item", "recipe", "virtual"}) do
     for signal_name, qarr in sorted_iter(output_signals[signal_type] or {}) do
       for _, quality in ipairs(qualities) do
@@ -816,9 +818,9 @@ function ResearchAutomationCombinator:on_tick()
             local insert = false
 
             --- @type DeciderCombinatorOutput
-            local current_output = parameters.outputs[i]
+            local current_output = parameters_copy.outputs[i]
 
-            if (i > #parameters.outputs or (current_output.signal.type or "item") > signal_type) then
+            if (i > #parameters_copy.outputs or (current_output.signal.type or "item") > signal_type) then
               -- Past all existing signals (of this type), so just need to add to end (or current position)
               insert = true
             else
@@ -839,7 +841,7 @@ function ResearchAutomationCombinator:on_tick()
                   i = i + 1
                 elseif (current_quality < quality) then
                   -- Record should not longer exist, remove
-                  table.remove(parameters.outputs, i)
+                  table.remove(parameters_copy.outputs, i)
                   continue = true
                 else
                   -- Found insertion position
@@ -847,7 +849,7 @@ function ResearchAutomationCombinator:on_tick()
                 end
               elseif (current_name < signal_name) then
                 -- Record should not longer exist, remove
-                table.remove(parameters.outputs, i)
+                table.remove(parameters_copy.outputs, i)
                 continue = true
               else
                 -- Found insertion position
@@ -865,7 +867,7 @@ function ResearchAutomationCombinator:on_tick()
                 constant = qarr[quality],
                 copy_count_from_input = false,
               }
-              table.insert(parameters.outputs, i, output)
+              table.insert(parameters_copy.outputs, i, output)
               i = i + 1
             end
           end
@@ -874,18 +876,18 @@ function ResearchAutomationCombinator:on_tick()
     end
 
     --- Remove anything that is left over for this signal type
-    while (i <= #parameters.outputs and parameters.outputs[i].signal and parameters.outputs[i].signal.type == signal_type) do
-      table.remove(parameters.outputs, i)
+    while (i <= #parameters_copy.outputs and parameters_copy.outputs[i].signal and parameters_copy.outputs[i].signal.type == signal_type) do
+      table.remove(parameters_copy.outputs, i)
     end
   end
 
   -- Remove any remaining outputs that were not part of our output_signals
-  while (i <= #parameters.outputs) do
-    table.remove(parameters.outputs, i)
+  while (i <= #parameters_copy.outputs) do
+    table.remove(parameters_copy.outputs, i)
   end
 
   -- Update the cb
-  cb.parameters = parameters
+  cb.parameters = parameters_copy
 end
 
 --- Adds an output signal to the combinator and keeps the signal list up to date.
@@ -899,11 +901,11 @@ function ResearchAutomationCombinator:add_output(name, output, cb)
   cb = cb or self:get_control_behavior()
 
   -- Get the next free index and add the output signal to the combinator
-  local index = self.indexes[OUTPUT_SIGNAL_INDEX.NEXT_FREE] or 1
+  local index = self.indexes[OUTPUT_SIGNAL_INDEX.FIRST_DYNAMIC] or 1
   cb.add_output(output, index)
 
   -- Increment next free index and set the new index for the signal
-  self.indexes[OUTPUT_SIGNAL_INDEX.NEXT_FREE] = index + 1
+  self.indexes[OUTPUT_SIGNAL_INDEX.FIRST_DYNAMIC] = index + 1
   self.indexes[name] = index
 end
 
@@ -916,7 +918,6 @@ function ResearchAutomationCombinator:remove_output(name, cb)
   -- Get the index to remove
   local index = self.indexes[name]
   if not index then return end
-  ---self.indexes[name] = nil
 
   --- Remove from the combinator
   --- @type LuaDeciderCombinatorControlBehavior
@@ -934,7 +935,7 @@ function ResearchAutomationCombinator:remove_output(name, cb)
   cb.remove_output(index)
 
   -- Decrement the remaining indexes that were above the removed index
-  for _, i  in pairs(OUTPUT_SIGNAL_INDEX) do
+  for _, i in pairs(OUTPUT_SIGNAL_INDEX) do
     if (self.indexes[i]) then
       if (self.indexes[i] == index and i ~= OUTPUT_SIGNAL_INDEX.RESEARCH_STATUS_START) then
         self.indexes[i] = nil
@@ -951,11 +952,6 @@ function ResearchAutomationCombinator:remove_output(name, cb)
   ) then
     self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_STATUS_START] = nil
     self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_STATUS_END] = nil
-  end
-
-  -- Ensure NEXT_FREE is still valid after removing an output.
-  if not self.indexes[OUTPUT_SIGNAL_INDEX.NEXT_FREE] or self.indexes[OUTPUT_SIGNAL_INDEX.NEXT_FREE] < 1 or self.indexes[OUTPUT_SIGNAL_INDEX.NEXT_FREE] > #parameters.outputs + 1 then
-    self.indexes[OUTPUT_SIGNAL_INDEX.NEXT_FREE] = #parameters.outputs + 1
   end
 end
 
@@ -1025,30 +1021,29 @@ function ResearchAutomationCombinator:repair_indexes(cb)
   if not parameters or not parameters.outputs then
     -- No outputs, reset everything
     self.indexes = {
-      [OUTPUT_SIGNAL_INDEX.NEXT_FREE] = 1,
+      [OUTPUT_SIGNAL_INDEX.FIRST_DYNAMIC] = 1,
     }
     return
   end
 
   -- Build a new indexes table based on the actual outputs
   local actual_output_count = #parameters.outputs
+  local max_output = 0
 
   -- Remove any indexes that point beyond the actual output count
   for key, index in pairs(self.indexes) do
-    if index > actual_output_count or index < 1 then
-      self.indexes[key] = nil
+    if key ~= OUTPUT_SIGNAL_INDEX.FIRST_DYNAMIC then
+      if index > actual_output_count or index < 1 then
+        self.indexes[key] = nil
+      end
+      if (self.indexes[key] or 0) > max_output then
+        max_output = self.indexes[key]
+      end
     end
   end
 
-  -- Update the NEXT_FREE index to be after the highest indexed output
-  local max_index = 0
-  for key, index in pairs(self.indexes) do
-    if key ~= OUTPUT_SIGNAL_INDEX.NEXT_FREE and index > max_index then
-      max_index = index
-    end
-  end
-
-  self.indexes[OUTPUT_SIGNAL_INDEX.NEXT_FREE] = max_index + 1
+  -- Set the next dynamic index to be one more than the max of the existing indexes, or 1 if there are no existing indexes
+  self.indexes[OUTPUT_SIGNAL_INDEX.FIRST_DYNAMIC] = max_output + 1
 end
 
 --- Handler for any change to research (finishing, cancelling, reversing).
@@ -1109,7 +1104,7 @@ function ResearchAutomationCombinator:on_research_change(event)
 
     -- Add new research status outputs
     if #techs > 0 then
-      local start_idx = self.indexes[OUTPUT_SIGNAL_INDEX.NEXT_FREE] or 1
+      local start_idx = self.indexes[OUTPUT_SIGNAL_INDEX.FIRST_DYNAMIC] or 1
       self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_STATUS_START] = start_idx
       local i = start_idx
 
@@ -1131,8 +1126,14 @@ function ResearchAutomationCombinator:on_research_change(event)
         end
       end
 
-      self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_STATUS_END] = i - 1
-      self.indexes[OUTPUT_SIGNAL_INDEX.NEXT_FREE] = self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_STATUS_END] + 1
+      -- Set the end indexes based on what researches were actually added
+      if i > start_idx then
+        self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_STATUS_END] = i - 1
+        self.indexes[OUTPUT_SIGNAL_INDEX.FIRST_DYNAMIC] = i
+      -- Nothing was inserted
+      else
+        self.indexes[OUTPUT_SIGNAL_INDEX.RESEARCH_STATUS_START] = nil
+      end
     end
   end
 end
