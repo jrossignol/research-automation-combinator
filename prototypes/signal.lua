@@ -175,7 +175,7 @@ local function tech_tier(tech, seen)
     -- Determine the highest tier science pack required
     local sci_tier = 0
     for _, ri in ipairs(tech.unit and tech.unit.ingredients or {}) do
-      sci_tier = sci_tiers[ri[1]] > sci_tier and sci_tiers[ri[1]] or sci_tier
+      sci_tier = (sci_tiers[ri[1]] or 0) > sci_tier and sci_tiers[ri[1]] or sci_tier
     end
 
     -- If the tier is zero then this may be a triggered tech

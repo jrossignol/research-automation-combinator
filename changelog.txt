@@ -1,9 +1,14 @@
 ---------------------------------------------------------------------------------------------------
+Version: 1.0.5
+Date: 2025-05-01
+  Bugfixes:
+    - Fixed nil comparison crash during load with certain mod combinations (Thanks fctrusr)
+---------------------------------------------------------------------------------------------------
 Version: 1.0.4
 Date: 2025-04-26
   Bugfixes:
     - Fixed more issues with combinators outputting incorrect data (Thanks yut23)
-	- Added on_configuration_changed handler to clean up data when mod list changes
+    - Added on_configuration_changed handler to clean up data when mod list changes
 ---------------------------------------------------------------------------------------------------
 Version: 1.0.3
 Date: 2025-04-25
