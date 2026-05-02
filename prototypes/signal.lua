@@ -155,7 +155,7 @@ local tech_tiers = {}
 --- @return number tier The tier of the associated tech.
 local function tech_tier(tech, seen)
   seen = seen or {}
-  
+
   -- Not a real tech, return 0
   if (tech == nil) then
     return 0
@@ -299,7 +299,7 @@ function signal_module.create_initial_signals()
   init_sci_tiers()
   init_tech_unlocks()
   init_all_subgroups()
-  
+
   local tech_signals = {}
 
   for name, tech in pairs(data.raw.technology) do

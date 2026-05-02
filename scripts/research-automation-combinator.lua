@@ -66,10 +66,14 @@ local fluid_by_tech = {}
 --- @type table<string, ResearchIngredient[]> A table of science packs by technology name.
 local science_packs_by_tech = {}
 local qualities = {}
+--- @type table<integer, table<OutputSignalIndex, number>> Cached research information by force
+local research_cache_by_force = {}
+
 
 --- Initializes the research automation combinator data.  Called when the mod is loaded.
 function init_rac_data()
-  -- Initialize the storage table for the research automation combinators
+  -- Initialize storage tables for the research automation combinators
+  --- @type table<integer, ResearchAutomationCombinator>
   storage.research_combinators = storage.research_combinators or {}
 
   -- Fix up the research combinator storage with proper class references
@@ -161,7 +165,6 @@ end
 --- @field previous_signals Signal[]? The signals from the previous processed tick.
 --- @field tick_settings_changed boolean? Indicates whether the settings with on_tick implications have changed since the last tick.
 --- @field indexes table<OutputSignalIndex, number> Indexes of output signals
---- @field cached_research_info table<OutputSignalIndex, number>? The saved research progress value (used for the research progress signal).
 ResearchAutomationCombinator = {
   version = RAC_VERSION,
   enabled_state = false,
@@ -449,7 +452,6 @@ function ResearchAutomationCombinator:update_combinator()
   })
 
   -- Clear states and remove progress signals if features are disabled
-  self.cached_research_info = {}
   if not self.output_research_progress_percent then
     self:remove_output(OUTPUT_SIGNAL_INDEX.RESEARCH_PERCENT, cb)
   end
@@ -520,7 +522,6 @@ function ResearchAutomationCombinator:configure_from_combinator()
   self.indexes = {
     [OUTPUT_SIGNAL_INDEX.FIRST_DYNAMIC] = 1,
   }
-  self.cached_research_info = {}
 
   -- Call handlers to make sure everything is properly updated
   self:on_research_change(nil)
@@ -609,16 +610,17 @@ function ResearchAutomationCombinator:on_tick()
         end
       end
 
-      for _, i in ipairs(signals) do
-        if (not self.cached_research_info) then
-          self.cached_research_info = {}
-        end
+      -- Pull the research cache information for this force
+      local force_id = self.entity.force.index
+      research_cache_by_force[force_id] = research_cache_by_force[force_id] or {}
+      local cached_info = research_cache_by_force[force_id]
 
+      for _, i in ipairs(signals) do
         -- Calculate current value
         local value = nil
         if (i == OUTPUT_SIGNAL_INDEX.RESEARCH_PERCENT) then
           value = math.floor(100 * progress)
-        elseif ((self.entity.unit_number + game.tick) % 60 == 0 or self.cached_research_info[i] == nil) then
+        elseif ((self.entity.unit_number + game.tick) % 60 == 0 or cached_info[i] == nil) then
           -- Calculate research from formula
           local formula = tech.research_unit_count_formula
           if (formula) then
@@ -634,11 +636,11 @@ function ResearchAutomationCombinator:on_tick()
             value = math.floor(value * (1 - progress))
           end
         else
-          value = self.cached_research_info[i]
+          value = cached_info[i]
         end
 
-        if (self.cached_research_info[i] ~= value) then
-          self.cached_research_info[i] = value
+        if (cached_info[i] ~= value) then
+          cached_info[i] = value
 
           -- Get the existing output
           cb = cb or self:get_control_behavior()
