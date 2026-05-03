@@ -1,6 +1,6 @@
 ---------------------------------------------------------------------------------------------------
 Version: 1.0.6
-Date: 2025-05-02
+Date: 2026-05-02
   Bugfixes:
     - Correctly calculate current/remaining/total research values when research multipliers are in effect (Thanks bNarFProfCrazy)
     - Fixed an off-by one rounding error in the research progress value calculation
@@ -8,30 +8,30 @@ Date: 2025-05-02
     - Added caching of research progress signals to reduce combinator updates
 ---------------------------------------------------------------------------------------------------
 Version: 1.0.5
-Date: 2025-05-01
+Date: 2026-05-01
   Bugfixes:
     - Fixed nil comparison crash during load with certain mod combinations (Thanks fctrusr)
 ---------------------------------------------------------------------------------------------------
 Version: 1.0.4
-Date: 2025-04-26
+Date: 2026-04-26
   Bugfixes:
     - Fixed more issues with combinators outputting incorrect data (Thanks yut23)
     - Added on_configuration_changed handler to clean up data when mod list changes
 ---------------------------------------------------------------------------------------------------
 Version: 1.0.3
-Date: 2025-04-25
+Date: 2026-04-25
   Bugfixes:
     - Fixed desync of combinator lists causing crashes (Thanks Miner3D-Gamer)
 ---------------------------------------------------------------------------------------------------
 Version: 1.0.2
-Date: 2025-02-07
+Date: 2026-02-07
   Bugfixes:
     - [Muluna] Fixed infinite loop from techs without a full definition until data-final-fixes (Thanks ExileFox)
     - [Muluna] Fix for tech signals where the tech icon is added late (Thanks ExileFox)
     - Fix potential crash when a technology unlocks no recipes (Thanks SkunkMaster)
 ---------------------------------------------------------------------------------------------------
 Version: 1.0.1
-Date: 2025-01-24
+Date: 2026-01-24
   Bugfixes:
     - [Krastorio 2 Spaced Out] Fixed tech signal icon generation issues (Thanks ExileFox and Terrulin)
 ---------------------------------------------------------------------------------------------------
