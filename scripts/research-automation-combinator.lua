@@ -66,7 +66,13 @@ local fluid_by_tech = {}
 --- @type table<string, ResearchIngredient[]> A table of science packs by technology name.
 local science_packs_by_tech = {}
 local qualities = {}
---- @type table<integer, table<OutputSignalIndex, number>> Cached research information by force
+
+--- @class ResearchInformation
+--- @field current_tech_name string The name of the current technology being researched.
+--- @field last_updated_tick MapTick The tick this information was last updated.
+--- @field signal_info table<OutputSignalIndex, {tick: MapTick, value: number}>> A table of cached signal information for the research combinator outputs, keyed by OutputSignalIndex.
+
+--- @type table<integer, ResearchInformation> Cached research information by force
 local research_cache_by_force = {}
 
 
@@ -134,6 +140,76 @@ function init_rac_data()
       end
     end
   end
+end
+
+
+--- Gets the cached research information for a force, or initializes it if it doesn't exist.
+--- @param force LuaForce The index of force to get the cached research information for.
+function get_cached_research_info(force)
+  local force_id = force.index
+  research_cache_by_force[force_id] = research_cache_by_force[force_id] or {}
+  local cache = research_cache_by_force[force_id]
+
+  -- If updated this tick, return immediately
+  if (cache.last_updated_tick == game.tick) then
+    return cache
+  end
+
+  -- Flush the cache if the research has changed since the last time we cached
+  -- information for this force.
+  if (cache.current_tech_name == nil or cache.current_tech_name ~= force.current_research.name) then
+    cache.current_tech_name = force.current_research.name
+    cache.last_updated_tick = nil
+    cache.signal_info = {}
+  end
+
+  -- Update if our data is stale
+  if (cache.last_updated_tick == nil or game.tick % 60 == 0) then
+    -- Get research details
+    local signal_info = cache.signal_info
+    local progress = force.research_progress or 0
+    local tech = force.current_research
+
+    -- Update percentage progress
+    local pct_progress = math.floor(100 * progress)
+    if (signal_info[OUTPUT_SIGNAL_INDEX.RESEARCH_PERCENT] == nil or
+      signal_info[OUTPUT_SIGNAL_INDEX.RESEARCH_PERCENT].value ~= pct_progress)
+    then
+      signal_info[OUTPUT_SIGNAL_INDEX.RESEARCH_PERCENT] = { tick = game.tick, value = pct_progress }
+      cache.last_updated_tick = game.tick
+    end
+
+    -- Calculate research value
+    local research_value = tech and tech.research_unit_count or 0
+
+    -- Assign current value
+    local current_value = math.floor(research_value * progress)
+    if (signal_info[OUTPUT_SIGNAL_INDEX.RESEARCH_CURRENT_VALUE] == nil or
+      signal_info[OUTPUT_SIGNAL_INDEX.RESEARCH_CURRENT_VALUE].value ~= current_value)
+    then
+      signal_info[OUTPUT_SIGNAL_INDEX.RESEARCH_CURRENT_VALUE] = { tick = game.tick, value = current_value }
+      cache.last_updated_tick = game.tick
+    end
+
+    -- Assign remaining value
+    local remaining_value = math.floor(research_value * (1 - progress))
+    if (signal_info[OUTPUT_SIGNAL_INDEX.RESEARCH_REMAINING_VALUE] == nil or
+      signal_info[OUTPUT_SIGNAL_INDEX.RESEARCH_REMAINING_VALUE].value ~= remaining_value)
+    then
+      signal_info[OUTPUT_SIGNAL_INDEX.RESEARCH_REMAINING_VALUE] = { tick = game.tick, value = remaining_value }
+      cache.last_updated_tick = game.tick
+    end
+
+    -- Assign total value
+    if (signal_info[OUTPUT_SIGNAL_INDEX.RESEARCH_TOTAL] == nil or
+      signal_info[OUTPUT_SIGNAL_INDEX.RESEARCH_TOTAL].value ~= research_value)
+    then
+      signal_info[OUTPUT_SIGNAL_INDEX.RESEARCH_TOTAL] = { tick = game.tick, value = research_value }
+      cache.last_updated_tick = game.tick
+    end
+  end
+
+  return cache
 end
 
 
@@ -611,59 +687,38 @@ function ResearchAutomationCombinator:on_tick()
       end
 
       -- Pull the research cache information for this force
-      local force_id = self.entity.force.index
-      research_cache_by_force[force_id] = research_cache_by_force[force_id] or {}
-      local cached_info = research_cache_by_force[force_id]
+      --- @type LuaForce
+      local force = self.entity.force
+      local cached_info = get_cached_research_info(force)
 
-      for _, i in ipairs(signals) do
-        -- Calculate current value
-        local value = nil
-        if (i == OUTPUT_SIGNAL_INDEX.RESEARCH_PERCENT) then
-          value = math.floor(100 * progress)
-        elseif ((self.entity.unit_number + game.tick) % 60 == 0 or cached_info[i] == nil) then
-          -- Calculate research from formula
-          local formula = tech.research_unit_count_formula
-          if (formula) then
-            value = helpers.evaluate_expression(formula, { L = tech.level, l = tech.level })
-          else
-            value = tech.research_unit_count
-          end
+      -- Update signals if this is an update tick or is we are dirty
+      if (self.tick_settings_changed or cached_info.last_updated_tick == game.tick) then
+        for _, i in ipairs(signals) do
+          -- Check for update on this specific signal
+          if (self.tick_settings_changed or cached_info.signal_info[i].tick == game.tick) then
+            -- Get the existing output
+            cb = cb or self:get_control_behavior()
+            local current_index = self.indexes[i]
+            local current_output = current_index and cb.parameters.outputs[current_index] or nil
 
-          -- Convert to a value
-          if (i == OUTPUT_SIGNAL_INDEX.RESEARCH_CURRENT_VALUE) then
-            value = math.floor(value * progress)
-          elseif (i == OUTPUT_SIGNAL_INDEX.RESEARCH_REMAINING_VALUE) then
-            value = math.floor(value * (1 - progress))
-          end
-        else
-          value = cached_info[i]
-        end
+            -- Build the output table
+            local signal = i == OUTPUT_SIGNAL_INDEX.RESEARCH_PERCENT and self.output_research_progress_percent_signal or
+              i == OUTPUT_SIGNAL_INDEX.RESEARCH_CURRENT_VALUE and self.output_research_progress_value_csignal or
+              i == OUTPUT_SIGNAL_INDEX.RESEARCH_REMAINING_VALUE and self.output_research_progress_value_rsignal or
+              i == OUTPUT_SIGNAL_INDEX.RESEARCH_TOTAL and self.output_research_progress_value_tsignal or nil
+            local output = {
+              signal = signal,
+              constant = cached_info.signal_info[i].value,
+              copy_count_from_input = false,
+            }
 
-        if (cached_info[i] ~= value) then
-          cached_info[i] = value
-
-          -- Get the existing output
-          cb = cb or self:get_control_behavior()
-          local current_index = self.indexes[i]
-          local current_output = current_index and cb.parameters.outputs[current_index] or nil
-
-          -- Build the output table
-          local signal = i == OUTPUT_SIGNAL_INDEX.RESEARCH_PERCENT and self.output_research_progress_percent_signal or
-            i == OUTPUT_SIGNAL_INDEX.RESEARCH_CURRENT_VALUE and self.output_research_progress_value_csignal or
-            i == OUTPUT_SIGNAL_INDEX.RESEARCH_REMAINING_VALUE and self.output_research_progress_value_rsignal or
-            i == OUTPUT_SIGNAL_INDEX.RESEARCH_TOTAL and self.output_research_progress_value_tsignal or nil
-          local output = {
-            signal = signal,
-            constant = value,
-            copy_count_from_input = false,
-          }
-
-          -- Update the existing output
-          if current_output then
-            cb.set_output(current_index, output)
-          -- Add a new output
-          else
-            self:add_output(i, output, cb)
+            -- Update the existing output
+            if current_output then
+              cb.set_output(current_index, output)
+            -- Add a new output
+            else
+              self:add_output(i, output, cb)
+            end
           end
         end
       end
