@@ -6,12 +6,13 @@ require("scripts.gui")
 
 script.on_load(function()
   register_picker_dollies()
-  init_rac_data()
+  load_rac_data()
 end)
 
 script.on_init(function()
   register_picker_dollies()
   init_rac_data()
+  load_rac_data()
 end)
 
 script.on_configuration_changed(function()

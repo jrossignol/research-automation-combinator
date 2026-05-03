@@ -76,12 +76,15 @@ local qualities = {}
 local research_cache_by_force = {}
 
 
---- Initializes the research automation combinator data.  Called when the mod is loaded.
+--- Initializes the research automation combinator data.  Called when the mod is initialized.
 function init_rac_data()
   -- Initialize storage tables for the research automation combinators
   --- @type table<integer, ResearchAutomationCombinator>
   storage.research_combinators = storage.research_combinators or {}
+end
 
+--- Initialize local data and set up metatables.  Called from `on_load()`.
+function load_rac_data()
   -- Fix up the research combinator storage with proper class references
   for _, rac in pairs(storage.research_combinators) do
     if not rac.__index then
