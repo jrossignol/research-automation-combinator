@@ -1,4 +1,10 @@
 ---------------------------------------------------------------------------------------------------
+Version: 1.0.6
+Date: 2025-05-02
+  Bugfixes:
+    - Correctly calculate current/remaining/total research values when research multipliers are in effect (Thanks bNarFProfCrazy)
+    - Added caching of research progress signals to reduce combinator updates
+---------------------------------------------------------------------------------------------------
 Version: 1.0.5
 Date: 2025-05-01
   Bugfixes:
