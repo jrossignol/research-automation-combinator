@@ -756,7 +756,7 @@ function ResearchAutomationCombinator:on_tick()
 
     -- Remove "rac-technology-" to get the tech name
     local tech_name = string.sub(s.signal.name or "", 16, -1)
-    local tech = game.forces.player.technologies[tech_name]
+    local tech = self.entity.force.technologies[tech_name]
 
     -- Get technology prerequisites
     if (self.get_research_prereq) then
@@ -1116,19 +1116,19 @@ function ResearchAutomationCombinator:on_research_change(event)
     -- Make a list of all the tech that we need to output
     local techs = {}
     if (self.output_research_by_status == OUTPUT_RESEARCH_BY_STATUS.RESEARCHED) then
-      for _, tech in pairs(game.forces.player.technologies) do
+      for _, tech in pairs(self.entity.force.technologies) do
         if (tech.researched) then
           techs[#techs+1] = tech
         end
       end
     elseif (self.output_research_by_status == OUTPUT_RESEARCH_BY_STATUS.UNRESEARCHED) then
-      for _, tech in pairs(game.forces.player.technologies) do
+      for _, tech in pairs(self.entity.force.technologies) do
         if (not tech.researched) then
           techs[#techs+1] = tech
         end
       end
     elseif (self.output_research_by_status == OUTPUT_RESEARCH_BY_STATUS.AVAILABLE) then
-      for _, tech in pairs(game.forces.player.technologies) do
+      for _, tech in pairs(self.entity.force.technologies) do
         if (not tech.researched) then
           local available = true
           for _, ptech in pairs(tech.prerequisites or {}) do
@@ -1190,7 +1190,7 @@ end
 function ResearchAutomationCombinator:on_research_queue_change(event)
   local clear_research = false
   if self.output_current_research then
-    local tech = game.forces.player.current_research
+    local tech = self.entity.force.current_research
     if tech then
       local signal_name = "rac-technology-" .. tech.name
 

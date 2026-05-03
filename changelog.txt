@@ -3,6 +3,8 @@ Version: 1.0.6
 Date: 2025-05-02
   Bugfixes:
     - Correctly calculate current/remaining/total research values when research multipliers are in effect (Thanks bNarFProfCrazy)
+    - Fixed an off-by one rounding error in the research progress value calculation
+    - Use correct force for research calculations (no longer assumes player force)
     - Added caching of research progress signals to reduce combinator updates
 ---------------------------------------------------------------------------------------------------
 Version: 1.0.5
