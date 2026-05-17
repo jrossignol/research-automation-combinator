@@ -309,12 +309,52 @@ function create_gui(player, entity)
 
   f.add{
     type="checkbox",
-    name="research_current_check",
+    name="research_output_check",
     style="checkbox",
-    caption={"rac-research-current"},
-    tooltip = {"rac-research-current-description"},
+    caption={"rac-research-output"},
+    tooltip = {"rac-research-output-description"},
     tags = { rac=true },
     state = false,
+  }
+  f.add{
+    type="radiobutton",
+    name="research_output_current",
+    caption={"rac-research-output-current"},
+    tooltip = {"rac-research-output-current-description"},
+    state=false,
+    tags={rac=true, radiobutton_group="research_output"},
+  }
+  f.add{
+    type="radiobutton",
+    name="research_output_queue",
+    caption={"rac-research-output-queue"},
+    tooltip = {"rac-research-output-queue-description"},
+    state=false,
+    tags={rac=true, radiobutton_group="research_output"},
+  }
+  hh = f.add{
+    type="flow",
+    name="h0",
+    direction="horizontal",
+    style="player_input_horizontal_flow",
+  }
+  hh.style.horizontally_stretchable = true
+  hh.add{
+    type="label",
+    name="signal_queue_size_label",
+    caption={"rac-research-queue-size-label"},
+    tooltip = {"rac-research-queue-size-label-description"},
+  }
+  hh.add{
+    type="empty-widget",
+    style="rac_horizontal_pusher",
+  }
+  hh.add{
+    type="choose-elem-button",
+    name="signal_queue_size",
+    style="slot_button_in_shallow_frame",
+    elem_type = "signal",
+    tags = { rac=true },
   }
   f.add{
     type="line",
@@ -504,7 +544,7 @@ function update_object_from_gui()
     (input.queue_tech_replace.state and SET_RESEARCH_MODE.REPLACE_QUEUE) or
     (input.queue_tech_front.state and SET_RESEARCH_MODE.ADD_FRONT) or
     (input.queue_tech_back.state and SET_RESEARCH_MODE.ADD_BACK) or
-    SET_RESEARCH_MODE.REPLACE_QUEUE
+    SET_RESEARCH_MODE.ADD_FRONT
 
   -- Convert input/output side values to class values
   local io = storage.gui.content.h.research_input_mode.f2
@@ -517,7 +557,11 @@ function update_object_from_gui()
 
   -- Convert output side values to class values
   local output = storage.gui.content.h.research_output_mode.f
-  rac.output_current_research = output.research_current_check.state
+  rac.output_research_mode = ((not output.research_output_check.state) and OUTPUT_RESEARCH_MODE.NONE) or
+    (output.research_output_current.state and OUTPUT_RESEARCH_MODE.CURRENT) or
+    (output.research_output_queue.state and OUTPUT_RESEARCH_MODE.QUEUE) or
+    OUTPUT_RESEARCH_MODE.CURRENT
+  rac.output_research_queue_size_signal = output.h0.signal_queue_size.elem_value
   rac.output_research_progress_percent = output.research_current_percent.state
   rac.output_research_progress_percent_signal = output.h.signal_percent.elem_value
   rac.output_research_progress_value = output.research_current_value.state
@@ -592,8 +636,23 @@ function update_gui_from_object()
   storage.gui.content.h.research_output_mode.f.h4.signal_total_label.enabled = rac.output_research_progress_value
   storage.gui.content.h.research_output_mode.f.h4.signal_total.enabled = rac.output_research_progress_value
 
+  -- Output mode
+  local research_mode = rac.output_research_mode ~= OUTPUT_RESEARCH_MODE.NONE
+  storage.gui.content.h.research_output_mode.f.research_output_current.enabled = research_mode
+  storage.gui.content.h.research_output_mode.f.research_output_queue.enabled = research_mode
+
+  local research_queue_enabled = rac.output_research_mode == OUTPUT_RESEARCH_MODE.QUEUE
+  storage.gui.content.h.research_output_mode.f.h0.signal_queue_size_label.enabled = research_queue_enabled
+  storage.gui.content.h.research_output_mode.f.h0.signal_queue_size.enabled = research_queue_enabled
+
+  storage.gui.content.h.research_output_mode.f.research_output_check.state = research_mode
+  storage.gui.content.h.research_output_mode.f.h0.signal_queue_size.elem_value = rac.output_research_queue_size_signal
+  if research_mode then
+    storage.gui.content.h.research_output_mode.f.research_output_current.state = rac.output_research_mode == OUTPUT_RESEARCH_MODE.CURRENT
+    storage.gui.content.h.research_output_mode.f.research_output_queue.state = rac.output_research_mode == OUTPUT_RESEARCH_MODE.QUEUE
+  end
+
   -- Outputs
-  storage.gui.content.h.research_output_mode.f.research_current_check.state = rac.output_current_research
   storage.gui.content.h.research_output_mode.f.research_current_percent.state = rac.output_research_progress_percent
   storage.gui.content.h.research_output_mode.f.h.signal_percent.elem_value = rac.output_research_progress_percent_signal
   storage.gui.content.h.research_output_mode.f.research_current_value.state = rac.output_research_progress_value
