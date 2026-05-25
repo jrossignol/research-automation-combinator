@@ -234,6 +234,7 @@ end
 --- @field get_research_science_packs boolean Indicates that we should return the science packs required by the tech.
 --- @field io_mode IOMode Indicates whether output values should be derived from input signals or context-based (0=input_value, 1=context).
 --- @field output_current_research boolean Indicates we should output the current research.
+--- @field output_current_research_queue_index integer The 0-based index in the research queue to output (0 = currently researched, 1 = next in queue, etc.).
 --- @field output_research_progress_percent boolean Indicates we should output the research progress as a percentage.
 --- @field output_research_progress_percent_signal SignalID? The signal used for the research progress percentage.
 --- @field output_research_progress_value boolean Indicates we should output the research progress as a value.
@@ -257,6 +258,7 @@ ResearchAutomationCombinator = {
   get_research_science_packs = false,
   io_mode = IO_MODE.INPUT_VALUE,
   output_current_research = false,
+  output_current_research_queue_index = 0,
   output_research_progress_percent = false,
   output_research_progress_percent_signal = {
     name = "signal-percent",
@@ -464,6 +466,7 @@ function ResearchAutomationCombinator:update_combinator()
   --         10: available techs
   --         11: unresearched techs
   --     * Bit 11: Read current research
+  --     * Bits 12-19: Queue index (0 = currently researched, 1 = next in queue, etc.)
   --- @type uint32
   local mask = self.set_research_mode
 
@@ -491,6 +494,7 @@ function ResearchAutomationCombinator:update_combinator()
   if (self.output_current_research) then
     mask = bit32.bor(mask, 0x0400)
   end
+  mask = bit32.bor(mask, bit32.lshift(bit32.band(self.output_current_research_queue_index or 0, 0xFF), 11))
 
   cb.set_condition(5, {
     compare_type = "and",
@@ -573,6 +577,7 @@ function ResearchAutomationCombinator:configure_from_combinator()
   -- Get output conditions
   self.output_research_by_status = bit32.rshift(bit32.band(mask, 0x0300), 8)
   self.output_current_research = bit32.band(mask, 0x0400) ~= 0
+  self.output_current_research_queue_index = bit32.band(bit32.rshift(mask, 11), 0xFF)
 
   -- Read research (value)
   local read_research_value_cond = parameters.conditions[6]
@@ -1258,7 +1263,9 @@ end
 function ResearchAutomationCombinator:on_research_queue_change(event)
   local clear_research = false
   if self.output_current_research then
-    local tech = self.entity.force.current_research
+    local queue = self.entity.force.research_queue
+    local queue_index = self.output_current_research_queue_index or 0
+    local tech = queue and queue[queue_index + 1]
     if tech then
       local signal_name = "rac-technology-" .. tech.name
 
