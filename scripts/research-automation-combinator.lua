@@ -746,6 +746,71 @@ function ResearchAutomationCombinator:on_tick()
   -- Signals have changed, so now the goal will be to update the combinator in the simplest way possible.
   self.previous_signals = input_tech_signals
 
+  -- Handle setting the research queue based on set_research_mode
+  if (self.set_research_mode ~= SET_RESEARCH_MODE.NONE) then
+    local force = self.entity.force
+    --- @type LuaTechnology[]
+    local technologies_to_add = {}
+    --- @type table<string, boolean> Set of technology names we're adding (for quick lookup)
+    local technologies_to_add_set = {}
+
+    -- Extract technologies from input signals (only non-researched)
+    for _, s in ipairs(input_tech_signals) do
+      local tech_name = string.sub(s.signal.name or "", 16, -1)
+      local tech = force.technologies[tech_name]
+      if tech and not tech.researched then
+        technologies_to_add[#technologies_to_add + 1] = tech
+        technologies_to_add_set[tech_name] = true
+      end
+    end
+
+    -- Build the desired queue based on set_research_mode
+    local desired_queue = {}
+    local current_queue = force.research_queue
+
+    if self.set_research_mode == SET_RESEARCH_MODE.REPLACE_QUEUE then
+      -- Desired queue is just the input technologies
+      desired_queue = technologies_to_add
+    elseif self.set_research_mode == SET_RESEARCH_MODE.ADD_FRONT then
+      -- Add to front: input technologies first, then current queue items (excluding those in input)
+      for _, tech in ipairs(technologies_to_add) do
+        desired_queue[#desired_queue + 1] = tech
+      end
+      for _, tech in ipairs(current_queue) do
+        if not tech.researched and not technologies_to_add_set[tech.name] then
+          desired_queue[#desired_queue + 1] = tech
+        end
+      end
+    elseif self.set_research_mode == SET_RESEARCH_MODE.ADD_BACK then
+      -- Add to back: current queue items (excluding those in input) first, then input technologies
+      for _, tech in ipairs(current_queue) do
+        if not tech.researched and not technologies_to_add_set[tech.name] then
+          desired_queue[#desired_queue + 1] = tech
+        end
+      end
+      for _, tech in ipairs(technologies_to_add) do
+        desired_queue[#desired_queue + 1] = tech
+      end
+    end
+
+    -- Compare desired queue against current queue and only update if different
+    local queue_changed = false
+    if #desired_queue ~= #current_queue then
+      queue_changed = true
+    else
+      for i, tech in ipairs(desired_queue) do
+        if current_queue[i] ~= tech then
+          queue_changed = true
+          break
+        end
+      end
+    end
+
+    if queue_changed then
+      force.research_queue = desired_queue
+    end
+  end
+
   -- Start by building the output list
   --- @type { [string]: { [string]: { [string]: integer } } }
   local output_signals = {
