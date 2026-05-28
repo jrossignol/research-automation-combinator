@@ -160,8 +160,9 @@ function get_cached_research_info(force)
 
   -- Flush the cache if the research has changed since the last time we cached
   -- information for this force.
-  if (cache.current_tech_name == nil or cache.current_tech_name ~= force.current_research.name) then
-    cache.current_tech_name = force.current_research.name
+  local current_name = force.current_research and force.current_research.name or nil
+  if (cache.current_tech_name == nil or cache.current_tech_name ~= current_name) then
+    cache.current_tech_name = current_name
     cache.last_updated_tick = nil
     cache.signal_info = {}
   end
