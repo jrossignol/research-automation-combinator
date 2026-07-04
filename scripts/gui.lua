@@ -316,6 +316,32 @@ function create_gui(player, entity)
     tags = { rac=true },
     state = false,
   }
+  local hq = f.add{
+    type="flow",
+    name="research_current_queue_flow",
+    direction="horizontal",
+    style="player_input_horizontal_flow",
+  }
+  hq.style.horizontally_stretchable = true
+  hq.add{
+    type="label",
+    name="research_current_queue_label",
+    caption={"rac-research-queue-index-label"},
+    tooltip={"rac-research-queue-index-label-description"},
+  }
+  hq.add{
+    type="empty-widget",
+    style="rac_horizontal_pusher",
+  }
+  hq.add{
+    type="textfield",
+    name="research_current_queue_index",
+    style="short_number_textfield",
+    numeric = true,
+    allow_negative = false,
+    tooltip={"rac-research-queue-index-label-description"},
+    tags = { rac=true },
+  }
   f.add{
     type="line",
     style="inside_shallow_frame_with_padding_line",
@@ -518,6 +544,7 @@ function update_object_from_gui()
   -- Convert output side values to class values
   local output = storage.gui.content.h.research_output_mode.f
   rac.output_current_research = output.research_current_check.state
+  rac.output_current_research_queue_index = tonumber(output.research_current_queue_flow.research_current_queue_index.text) or 0
   rac.output_research_progress_percent = output.research_current_percent.state
   rac.output_research_progress_percent_signal = output.h.signal_percent.elem_value
   rac.output_research_progress_value = output.research_current_value.state
@@ -583,6 +610,8 @@ function update_gui_from_object()
   storage.gui.content.h.research_input_mode.f2.research_get_science_packs.state = rac.get_research_science_packs
 
   -- Set output states
+  storage.gui.content.h.research_output_mode.f.research_current_queue_flow.research_current_queue_label.enabled = rac.output_current_research
+  storage.gui.content.h.research_output_mode.f.research_current_queue_flow.research_current_queue_index.enabled = rac.output_current_research
   storage.gui.content.h.research_output_mode.f.h.signal_percent_label.enabled = rac.output_research_progress_percent
   storage.gui.content.h.research_output_mode.f.h.signal_percent.enabled = rac.output_research_progress_percent
   storage.gui.content.h.research_output_mode.f.h2.signal_current_label.enabled = rac.output_research_progress_value
@@ -594,6 +623,7 @@ function update_gui_from_object()
 
   -- Outputs
   storage.gui.content.h.research_output_mode.f.research_current_check.state = rac.output_current_research
+  storage.gui.content.h.research_output_mode.f.research_current_queue_flow.research_current_queue_index.text = tostring(rac.output_current_research_queue_index or 0)
   storage.gui.content.h.research_output_mode.f.research_current_percent.state = rac.output_research_progress_percent
   storage.gui.content.h.research_output_mode.f.h.signal_percent.elem_value = rac.output_research_progress_percent_signal
   storage.gui.content.h.research_output_mode.f.research_current_value.state = rac.output_research_progress_value
