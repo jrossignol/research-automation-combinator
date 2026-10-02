@@ -104,7 +104,6 @@ function load_rac_data()
   -- Get all technology that has unlocks
   local tech_prototypes = prototypes.get_technology_filtered{
     {filter="enabled"},
-    {filter="has-effects", mode="and"},
   }
 
   for tech_name, tech in pairs(tech_prototypes) do
